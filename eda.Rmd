@@ -1,0 +1,94 @@
+---
+title: "eda"
+author: "Kelsey Schroeder"
+date: "August 12, 2015"
+output: html_document
+---
+For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+
+```{r}
+```
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+source('db_connection.r')
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+First, I'll pull the data set from my database.
+```{r}
+taxi <- query_results("
+  SELECT *
+ FROM trips
+ INNER JOIN fares ON trips.id = fares.trip_id
+ ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
+ LIMIT 1000000;
+
+")
+
+taxi <- taxi[,unique(colnames(taxi))]
+
+```
+
+In order to better analyze the data, let's divide the longitude/latitude pairings into boroughs (this is just an estimation, boundaries aren't perfect):
+
+```{r}
+library(dplyr)
+taxi <- taxi %>% 
+  mutate(pickup_borough = 
+    ifelse(pickup_longitude> -74.01 & pickup_longitude< -73.927 & 
+             pickup_latitude > 40.701 & pickup_latitude < 40.875, "manhattan", 
+    ifelse(pickup_latitude<40.7 & pickup_longitude > -73.85 | 
+             pickup_longitude > -73.96 & pickup_longitude < -73.92 & 
+                pickup_latitude < 40.704 & pickup_latitude >40.739, "brooklyn", 
+    ifelse(pickup_longitude> - 73.927 | pickup_latitude > 40.875, "bronx",
+    ifelse(pickup_longitude < -74.04, "staten_island", "queens")))))
+
+taxi <- taxi %>% 
+  mutate(dropoff_borough = 
+    ifelse(dropoff_longitude> -74.01 & dropoff_longitude< -73.927 & 
+             dropoff_latitude > 40.701 & dropoff_latitude < 40.875, "manhattan", 
+    ifelse(dropoff_latitude<40.7 & dropoff_longitude > -73.85 | 
+             dropoff_longitude > -73.96 & dropoff_longitude < -73.92 & 
+                dropoff_latitude < 40.704 & dropoff_latitude >40.739, "brooklyn", 
+    ifelse(dropoff_longitude> - 73.927 | dropoff_latitude > 40.875, "bronx",
+    ifelse(dropoff_longitude < -74.04, "staten_island", "queens")))))
+```
+
+How many pickups per borough?
+
+```{r}
+borough_total_pickups <- taxi %>% 
+  filter(!is.na(pickup_borough) & !is.na(dropoff_borough)) %>% 
+  group_by(pickup_borough) %>% 
+  summarize(count = n())
+```
+
+Let's perform some EDA.  First, let's look into tipping.  What's the distribution of tip percentages? 
+
+TODO: Tried doing a ratio here but it didn't work.  Try again later?
+
+```{r, echo = FALSE}
+library(ggplot2)
+taxi$tip_amount = as.double(taxi$tip_amount)
+taxi$fare_amount = as.double(taxi$fare_amount)
+
+
+tip_percentages <- taxi %>% 
+  dplyr::mutate(tip_percentage = tip_amount/fare_amount*100) %>%
+  left_join(borough_total_pickups, by = "pickup_borough") %>% 
+  group_by(pickup_borough)
+  
+ggplot(tip_percentages, aes(tip_percentage, fill=pickup_borough)) + geom_bar(position="dodge", binwidth = .1) + xlim(0,.5)
+
+```
+
+
+
+
