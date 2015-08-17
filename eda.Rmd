@@ -136,5 +136,90 @@ ggplot(taxi, aes(x = factor(weekday, week_levels)), y = revenue) + geom_bar() +
   xlab("Day of Week") + ylab("Total Revenue ($)") + ggtitle("Revenue Per Day of Week")
 ```
 
+Checking out the toll situation in the city.  High tolls for Staten Island!
 
+```{r}
+taxi$tolls_amount <- as.double(taxi$tolls_amount)
+taxi %>% 
+  filter(tolls_amount>0) %>% 
+  group_by(pickup_borough, dropoff_borough) %>% 
+  summarize(num_rides_w_tolls = n(), average_toll = mean(tolls_amount)) %>% 
+  ungroup() %>% 
+  ungroup() %>% 
+  arrange(desc(average_toll)) # can also order by number of toll rides
+```
+
+How about trip length?
+
+```{r}
+taxi_length <- taxi %>% 
+  select(trip_distance, trip_time_in_secs) %>% 
+  filter(trip_distance>0) 
+
+taxi_length$trip_distance <- round(as.double(taxi_length$trip_distance))
+taxi_length$trip_time_in_secs <- round(as.double(taxi_length$trip_time_in_secs), digits = -1)
+
+ggplot(taxi_length, aes(x=trip_distance, y= trip_time_in_secs)) +
+    geom_point(shape=19,      # Use solid circles
+               alpha=1/100) + xlim(0,25) + ylim(0,5000)
+
+taxi_length %>% 
+  summarize(mean_distance = mean(trip_distance), mean_time = mean(trip_time_in_secs))
+```
+
+Looks like the vast majority of trips are within 25 miles and 50 minutes.  This is expected.  Mean distance is 3.39 miles, mean time is about 13 minutes (802 seconds).
+
+Can we find any trends with trips to airports? Perhaps there's a flat rate fare.  Here's a histogram of fare amounts (not counting surcharges, tip, tolls, etc.).
+
+```{r}
+taxi$fare_amount <- as.double(taxi$fare_amount)
+airport <- taxi %>% 
+  select(fare_amount) 
+
+ggplot(airport, aes(x = fare_amount)) + geom_histogram(binwidth = 1) + xlim(0,57)
+
+```
+
+Notice the peak at $52.  Perhaps this is a flat rate?
+
+```{r}
+taxi52 <- taxi %>% 
+  filter(fare_amount == 52)
+
+ggplot(taxi52, aes(x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/10) + 
+  xlim(-74.2,-73.6) + ylim(40.5,41)
+```
+
+Here we see two clusters.  Let's examine more closely.
+
+```{r}
+# Checking out the cluster to the right
+ggplot(taxi52, aes(x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/10) + 
+  xlim(-73.9,-73.7) + ylim(40.635,40.65) # JFK
+  
+ggplot(taxi52, aes(x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/10) + 
+  xlim(-74,-73.97) + ylim(40.745,40.775) # unclear
+
+ggplot(taxi52, aes(x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/10) + 
+  xlim(-74.05,-73.75)+ ylim(40.5,41)
+
+taxi52_pickups <- taxi52 %>% 
+  filter(dropoff_longitude < -73.97 & dropoff_longitude > -74 & dropoff_latitude > 40.745 &
+           dropoff_latitude < 40.775)
+
+ggplot(taxi52_pickups, aes(x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/10) +
+  xlim(-75,-72.5) + ylim(40.5,41)
+```
+
+And would you look at that!  The cluster to the right is at approximately -73.78 longitude and 40.645 latitude, landing us right on top of JFK airport.  If we look at the pickup data for the other point in the dropoff graph, we find that these customers were picked up at the airport and brough to various places in NYC.  The internet confirms that this ride is a flat rate either way.
+
+What if we look at general pickup/dropoff locations?  Will we find any especially popular spots other than the airport?
+
+```{r}
+ggplot(taxi, aes( x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/510) + 
+  xlim(-74.01,-73.85) + ylim(40.7,40.85) # having trouble setting this alpha to the correct value. want to be able to pick out specific long/lat points.
+
+ggplot(taxi, aes( x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/100)
+
+```
 
