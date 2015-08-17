@@ -92,7 +92,20 @@ ggplot(tip_percentages, aes(tip_percentage, fill=pickup_borough)) + geom_bar(pos
 
 ```
 
-How many trips per day?
+How many trips per date?  We can see here the lull on January 21st (MLK Day).  There's
+also a dip on Janurary 6th, which is the Epiphany, but I'm not convinced that's why we see less taxi traffic.  Also puzzling is the peak on January 26th (Saturday).
+
+```{r, echo = F}
+jan_taxi <- taxi %>% 
+  group_by(pickup_date) %>% 
+  summarize(trips = n())
+
+ggplot(jan_taxi, aes(x = pickup_date, y = trips, group = 1)) + geom_line(stat= 'identity')
+
+```
+
+
+How many trips per day of week?
 
 ```{r, echo = FALSE}
 days_of_week <- read.csv("/Users/angelaschroeder/Downloads/days_of_week - Sheet1 (1).csv")
