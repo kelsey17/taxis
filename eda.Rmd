@@ -12,7 +12,7 @@ For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
 You can also embed plots, for example:
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, message = FALSE}
 source('db_connection.r')
 library(ggplot2)
 library(tidyr)
@@ -23,7 +23,7 @@ Note that the `echo = FALSE` parameter was added to the code chunk to prevent pr
 
 First, I'll pull the data set from my database.
 ```{r}
-taxi <- query_results("
+taxi_raw <- query_results("
   SELECT *
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
@@ -32,7 +32,7 @@ taxi <- query_results("
 
 ")
 
-taxi <- taxi[,unique(colnames(taxi))]
+taxi_raw <- taxi_raw[,unique(colnames(taxi_raw))]
 
 ```
 
@@ -40,7 +40,7 @@ In order to better analyze the data, let's divide the longitude/latitude pairing
 
 ```{r}
 library(dplyr)
-taxi <- taxi %>% 
+taxi_raw <- taxi_raw %>% 
   mutate(pickup_borough = 
     ifelse(pickup_longitude> -74.01 & pickup_longitude< -73.927 & 
              pickup_latitude > 40.701 & pickup_latitude < 40.875, "manhattan", 
@@ -50,7 +50,7 @@ taxi <- taxi %>%
     ifelse(pickup_longitude> - 73.927 | pickup_latitude > 40.875, "bronx",
     ifelse(pickup_longitude < -74.04, "staten_island", "queens")))))
 
-taxi <- taxi %>% 
+taxi_raw <- taxi_raw %>% 
   mutate(dropoff_borough = 
     ifelse(dropoff_longitude> -74.01 & dropoff_longitude< -73.927 & 
              dropoff_latitude > 40.701 & dropoff_latitude < 40.875, "manhattan", 
@@ -59,6 +59,9 @@ taxi <- taxi %>%
                 dropoff_latitude < 40.704 & dropoff_latitude >40.739, "brooklyn", 
     ifelse(dropoff_longitude> - 73.927 | dropoff_latitude > 40.875, "bronx",
     ifelse(dropoff_longitude < -74.04, "staten_island", "queens")))))
+
+taxi <- taxi_raw %>% 
+  tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), 10)
 ```
 
 How many pickups per borough?
@@ -89,6 +92,36 @@ ggplot(tip_percentages, aes(tip_percentage, fill=pickup_borough)) + geom_bar(pos
 
 ```
 
+How many trips per day?
+
+```{r, echo = FALSE}
+days_of_week <- read.csv("/Users/angelaschroeder/Downloads/days_of_week - Sheet1 (1).csv")
+
+taxi <- taxi %>% 
+  left_join(days_of_week, by = "pickup_date")
+
+taxi %>% 
+  group_by(weekday) %>% 
+  summarize(total_rides = n())
+
+week_levels <- c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+
+ggplot(aes(x = factor(weekday, week_levels)), data = taxi) + geom_histogram() + xlab("Day of Week") +
+  ylab("Number of Trips") + ggtitle("Trips Per Day")
+```
+
+Total revenue each day of the week?
+
+```{r, echo = FALSE}
+taxi$total_amount <- as.double(taxi$total_amount) 
+taxi %>% 
+  group_by(weekday) %>% 
+  summarize(revenue = sum(total_amount)) %>% 
+  arrange(desc(revenue))
+
+ggplot(taxi, aes(x = factor(weekday, week_levels)), y = revenue) + geom_bar() + 
+  xlab("Day of Week") + ylab("Total Revenue ($)") + ggtitle("Revenue Per Day of Week")
+```
 
 
 
