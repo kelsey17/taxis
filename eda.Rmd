@@ -23,8 +23,8 @@ taxi_raw <- query_results("
   SELECT *
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
- ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
- LIMIT 10000;
+ #ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
+ LIMIT 100000;
 
 ")
 
@@ -56,6 +56,9 @@ taxi_raw <- taxi_raw %>%
 
 taxi_raw <- taxi_raw %>% 
   mutate(
+    medallion = as.factor(medallion),
+    hack_license = as.factor(hack_license),
+    vendor_id = as.factor(vendor_id),
     rate_code = as.factor(rate_code),
     pickup_datetime = ymd_hms(pickup_datetime),
     dropoff_datetime = ymd_hms(dropoff_datetime), # UTC incorrect
@@ -66,13 +69,14 @@ taxi_raw <- taxi_raw %>%
     tip_amount = as.double(tip_amount),
     tolls_amount = as.double(tolls_amount),
     total_amount = as.double(total_amount),
-   # pickup_borough = as.factor(pickup_borough),
-   # dropoff_borough = as.factor(dropoff_borough),
+   pickup_borough = as.factor(pickup_borough),
+    dropoff_borough = as.factor(dropoff_borough),
     trip_time_in_secs = as.integer(trip_time_in_secs),
     trip_distance = as.double(trip_distance),
     passenger_count = as.integer(passenger_count)
   )
 
+taxi <- taxi_raw
 #taxi <- taxi_raw %>% 
  # tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), 10)
 ```
@@ -91,11 +95,6 @@ Let's perform some EDA.  First, let's look into tipping.  What's the distributio
 TODO: Tried doing a ratio here but it didn't work.  Try again later?
 
 ```{r, echo = FALSE}
-library(ggplot2)
-taxi$tip_amount = as.double(taxi$tip_amount)
-taxi$fare_amount = as.double(taxi$fare_amount)
-
-
 tip_percentages <- taxi %>% 
   dplyr::mutate(tip_percentage = tip_amount/fare_amount*100) %>%
   left_join(borough_total_pickups, by = "pickup_borough") %>% 
@@ -249,15 +248,22 @@ By zooming in on this graph and identifying landmarks based on longitude/latitud
 Now let's try some machine learning on this data set.
 
 ```{r}
-smp_size <- floor(0.75 * nrow(taxi))
+
+tip_percentages <- na.omit(tip_percentages)
+
+smp_size <- floor(0.75 * nrow(tip_percentages))
 set.seed(123)
-train_ind <- sample(seq_len(nrow(taxi)), size = smp_size)
+train_ind <- sample(seq_len(nrow(tip_percentages)), size = smp_size)
 
-train <- taxi[train_ind, ]
-test <- taxi[-train_ind, ]
+train <- tip_percentages[train_ind, ]
+test <- tip_percentages[-train_ind, ]
 
-library(tree)
-tree.taxi = tree(tip_percentage~as.double(trip_time_in_secs) , data = tip_percentages)
+fit <- rpart(tip_percentage~ trip_time_in_secs + trip_distance + fare_amount, data=train, method="anova") 
+plot(fit)
+text(fit)
+
+
+tree.tip = tree(tip_percentage~trip_time_in_secs, trip_distance, data = tip_percentages)
 summary(tree.taxi)
 plot(tree.taxi)
 text(tree.taxi)
