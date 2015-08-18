@@ -24,7 +24,7 @@ taxi_raw <- query_results("
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
  -- ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
- LIMIT 10000;
+ LIMIT 1000000;
 
 ")
 
@@ -75,7 +75,6 @@ taxi_raw <- taxi_raw %>%
     trip_distance = as.double(trip_distance),
     passenger_count = as.integer(passenger_count)
   )
-
 ```
 
 How many pickups per borough?
@@ -84,7 +83,7 @@ How many pickups per borough?
 borough_total_pickups <- taxi_raw %>% 
   filter(!is.na(pickup_borough) & !is.na(dropoff_borough)) %>% 
   group_by(pickup_borough) %>% 
-  summarize(count = n())
+  summarize(borough_pickups = n())
 ```
 
 Let's perform some EDA.  First, let's look into tipping.  What's the distribution of tip percentages? 
@@ -92,25 +91,23 @@ Let's perform some EDA.  First, let's look into tipping.  What's the distributio
 TODO: Tried doing a ratio here but it didn't work.  Try again later?
 
 ```{r, echo = FALSE}
+days_of_week <- read.csv("days_of_week - Sheet1 (1).csv")
+
 taxi <- taxi_raw %>% 
   dplyr::mutate(tip_percentage = tip_amount/fare_amount*100) %>%
   left_join(borough_total_pickups, by = "pickup_borough") %>% 
-  group_by(pickup_borough)
+  tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), " ") %>%
+  tidyr::separate(pickup_time, c("pickup_hour", "pickup_min", "pickup_sec"), ":") %>% 
+  left_join(days_of_week, by = "pickup_date") %>% 
+  mutate(pickup_date = ymd(pickup_date))
   
 ggplot(taxi, aes(tip_percentage, fill=pickup_borough)) + geom_bar(position="dodge", binwidth = .1) + xlim(0,.5)
-
 ```
 
 How many trips per day of week?
 
 ```{r, echo = FALSE}
-days_of_week <- read.csv("/Users/angelaschroeder/Downloads/days_of_week - Sheet1 (1).csv")
-
-taxi_days <- taxi %>% 
-  tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), 10) %>% 
-  left_join(days_of_week, by = "pickup_date")
-
-taxi_days %>% 
+taxi %>% 
   group_by(weekday) %>% 
   summarize(total_rides = n())
 
@@ -129,13 +126,12 @@ jan_taxi <- taxi_days %>%
   summarize(trips = n())
 
 ggplot(jan_taxi, aes(x = pickup_date, y = trips, group = 1)) + geom_line(stat= 'identity')
-
 ```
 
 Total revenue each day of the week?
+TODO: See if this is statistically significant
 
 ```{r, echo = FALSE}
-taxi$total_amount <- as.double(taxi$total_amount) 
 taxi %>% 
   group_by(weekday) %>% 
   summarize(revenue = sum(total_amount)) %>% 
@@ -148,7 +144,6 @@ ggplot(taxi, aes(x = factor(weekday, week_levels)), y = revenue) + geom_bar() +
 Checking out the toll situation in the city.  High tolls for Staten Island!
 
 ```{r}
-taxi$tolls_amount <- as.double(taxi$tolls_amount)
 taxi %>% 
   filter(tolls_amount>0) %>% 
   group_by(pickup_borough, dropoff_borough) %>% 
@@ -165,28 +160,21 @@ taxi_length <- taxi %>%
   select(trip_distance, trip_time_in_secs) %>% 
   filter(trip_distance>0) 
 
-taxi_length$trip_distance <- round(as.double(taxi_length$trip_distance))
-taxi_length$trip_time_in_secs <- round(as.double(taxi_length$trip_time_in_secs), digits = -1)
+taxi_length$trip_distance <- round(taxi_length$trip_distance)
+taxi_length$trip_time_in_secs <- round(taxi_length$trip_time_in_secs, digits = -1)
 
 ggplot(taxi_length, aes(x=trip_distance, y= trip_time_in_secs)) +
-    geom_point(shape=19,      # Use solid circles
-               alpha=1/100) + xlim(0,25) + ylim(0,5000)
+    geom_point(shape=19, alpha=1/10)
 
-taxi_length %>% 
-  summarize(mean_distance = mean(trip_distance), mean_time = mean(trip_time_in_secs))
+summary(taxi_length) 
 ```
 
 Looks like the vast majority of trips are within 25 miles and 50 minutes.  This is expected.  Mean distance is 3.39 miles, mean time is about 13 minutes (802 seconds).
 
 Can we find any trends with trips to airports? Perhaps there's a flat rate fare.  Here's a histogram of fare amounts (not counting surcharges, tip, tolls, etc.).
 
-```{r}
-taxi$fare_amount <- as.double(taxi$fare_amount)
-airport <- taxi %>% 
-  select(fare_amount) 
-
-ggplot(airport, aes(x = fare_amount)) + geom_histogram(binwidth = 1) + xlim(0,57)
-
+```{r, echo = FALSE}
+ggplot(taxi, aes(x = fare_amount)) + geom_histogram(binwidth = 1) + xlim(0,57)
 ```
 
 Notice the peak at $52.  Perhaps this is a flat rate?
@@ -225,10 +213,10 @@ And would you look at that!  The cluster to the right is at approximately -73.78
 What if we look at general pickup/dropoff locations?  Will we find any especially popular spots other than the airport?
 
 ```{r}
-ggplot(taxi, aes( x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/510) + 
+ggplot(taxi, aes( x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/500) + 
   xlim(-74.01,-73.85) + ylim(40.7,40.85) + theme_bw() # having trouble setting this alpha to the correct value. want to be able to pick out specific long/lat points. Cool map of Manhattan for now!
 
-ggplot(taxi, aes( x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/100) + xlim(-74.4,-73.4) + ylim(40.5,41)
+ggplot(taxi, aes( x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/100) + xlim(-74.4,-73.4) + ylim(40.5,41) + theme_bw()
 ```
 
 By zooming in on this graph and identifying landmarks based on longitude/latitude data, I was able to identify the following as popular pick up and drop off locations:
@@ -304,9 +292,47 @@ I'm interested in the revenues/profit strategies of specific cabbies.  Let's tak
 
 ```{r}
 taxi_indiv <- taxi %>% 
-  
-
-
+  group_by(hack_license, vendor_id, rate_code, pickup_date, pickup_hour, payment_type, dropoff_datetime,
+           pickup_borough, dropoff_borough) %>% 
+  summarize(total_distance = sum(trip_distance)
+            , total_time = sum(trip_time_in_secs)
+            , total_num_passengers = sum(passenger_count)
+            , total_tips = sum(tip_amount)
+            , total_revenue = sum(total_amount)
+            , num_different_cars = n_distinct(medallion)
+  ) %>% 
+  ungroup() 
 ```
 
+Now we have a data set for individual cabs.  Yay!  Let's look at a few different things, starting with
+the total revenue per cab.
+TODO: Use whole data set for this.  The info isn't really accurate without it.  If we can't handle this, could potentially limit date to 2 weeks, 1 week, x total hack licenses, etc.
 
+```{r}
+taxi_indiv_rev <- taxi_indiv %>% 
+  group_by(hack_license) %>% 
+  summarize(total_revenue = sum(total_revenue)) %>% 
+  arrange(desc(total_revenue))
+
+ggplot(taxi_indiv_rev, aes(x = total_revenue)) + geom_histogram(binwidth= 20)
+```
+
+How about total number of rides, or passengers?
+
+```{r}
+taxi_indiv_pass <- taxi_indiv %>% 
+  group_by(hack_license) %>% 
+  summarize(num_passengers = sum(total_num_passengers), num_trips = n_distinct(dropoff_datetime))
+
+ggplot(taxi_indiv_pass) + geom_histogram(aes(num_passengers)) + xlim(0,400) # will need to change these limits for full data set
+ggplot(taxi_indiv_pass) + geom_histogram(aes(num_trips)) + xlim(0,100)
+```
+
+Total number of different cars driven by cabbie: THIS IS WRONG
+TODO: Figure out why some cabbies apparently drive 132 different cars in a month.
+```{r}
+taxi_indiv_cars <- taxi_indiv %>% 
+  group_by(hack_license) %>% 
+  summarize(total_cars = sum(num_different_cars)) %>% 
+  arrange(desc(total_cars))
+```
