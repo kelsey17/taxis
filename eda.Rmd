@@ -11,6 +11,8 @@ source('db_connection.r')
 library(ggplot2)
 library(tidyr)
 library(dplyr)
+library(lubridate)
+library(tree)
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
@@ -22,18 +24,16 @@ taxi_raw <- query_results("
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
  ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
- LIMIT 1000000;
+ LIMIT 10000;
 
 ")
 
 taxi_raw <- taxi_raw[,unique(colnames(taxi_raw))]
-
 ```
 
 In order to better analyze the data, let's divide the longitude/latitude pairings into boroughs (this is just an estimation, boundaries aren't perfect):
 
 ```{r}
-library(dplyr)
 taxi_raw <- taxi_raw %>% 
   mutate(pickup_borough = 
     ifelse(pickup_longitude> -74.01 & pickup_longitude< -73.927 & 
@@ -54,8 +54,27 @@ taxi_raw <- taxi_raw %>%
     ifelse(dropoff_longitude> - 73.927 | dropoff_latitude > 40.875, "bronx",
     ifelse(dropoff_longitude < -74.04, "staten_island", "queens")))))
 
-taxi <- taxi_raw %>% 
-  tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), 10)
+taxi_raw <- taxi_raw %>% 
+  mutate(
+    rate_code = as.factor(rate_code),
+    pickup_datetime = ymd_hms(pickup_datetime),
+    dropoff_datetime = ymd_hms(dropoff_datetime), # UTC incorrect
+    payment_type = as.factor(payment_type),
+    fare_amount = as.double(fare_amount),
+    surcharge = as.double(surcharge),
+    mta_tax = as.double(mta_tax),
+    tip_amount = as.double(tip_amount),
+    tolls_amount = as.double(tolls_amount),
+    total_amount = as.double(total_amount),
+   # pickup_borough = as.factor(pickup_borough),
+   # dropoff_borough = as.factor(dropoff_borough),
+    trip_time_in_secs = as.integer(trip_time_in_secs),
+    trip_distance = as.double(trip_distance),
+    passenger_count = as.integer(passenger_count)
+  )
+
+#taxi <- taxi_raw %>% 
+ # tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), 10)
 ```
 
 How many pickups per borough?
@@ -226,4 +245,30 @@ By zooming in on this graph and identifying landmarks based on longitude/latitud
 * Brooklyn Driving School
 * Eight Strings and a Whistle
 * Various auto shops
+
+Now let's try some machine learning on this data set.
+
+```{r}
+smp_size <- floor(0.75 * nrow(taxi))
+set.seed(123)
+train_ind <- sample(seq_len(nrow(taxi)), size = smp_size)
+
+train <- taxi[train_ind, ]
+test <- taxi[-train_ind, ]
+
+library(tree)
+tree.taxi = tree(tip_percentage~as.double(trip_time_in_secs) , data = tip_percentages)
+summary(tree.taxi)
+plot(tree.taxi)
+text(tree.taxi)
+
+tree.pred = predict(tree.reg, test, type = "class")
+with(test, table(tree.pred,High)) # 82% accuracy
+
+library(class)
+knn.pred = knn(train_num,test_num, train_num1$High, k = 3)
+table(knn.pred, test_num1$High) # 87.5% accuracy
+mean(knn.pred == test_num1$High)
+plot(knn.pred)
+```
 
