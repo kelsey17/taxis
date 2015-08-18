@@ -12,7 +12,8 @@ library(ggplot2)
 library(tidyr)
 library(dplyr)
 library(lubridate)
-library('rpart')
+library('rpart') # NOTE: you need to manually install rpart.plot as a separate package
+library('rattle')
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
@@ -24,7 +25,7 @@ taxi_raw <- query_results("
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
  -- ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
- LIMIT 100000;
+ LIMIT 1000000;
 
 ")
 
@@ -69,7 +70,7 @@ taxi_raw <- taxi_raw %>%
     tip_amount = as.double(tip_amount),
     tolls_amount = as.double(tolls_amount),
     total_amount = as.double(total_amount),
-   pickup_borough = as.factor(pickup_borough),
+    pickup_borough = as.factor(pickup_borough),
     dropoff_borough = as.factor(dropoff_borough),
     trip_time_in_secs = as.integer(trip_time_in_secs),
     trip_distance = as.double(trip_distance),
@@ -272,9 +273,11 @@ train_ind <- sample(seq_len(nrow(tip_percentages)), size = smp_size)
 train <- tip_percentages[train_ind, ]
 test <- tip_percentages[-train_ind, ]
 
-fit <- rpart(tip_percentage ~ . , data=train, method="anova") 
-plot(fit)
-text(fit)
+rfit <- rpart(tip_percentage ~ . , data=train) 
+rpart.plot(rfit)
+text(rfit)
+
+rattle::fancyRpartPlot(rfit)
 
 
 tree.tip = tree(tip_percentage~trip_time_in_secs, trip_distance, data = tip_percentages)
