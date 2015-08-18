@@ -12,7 +12,7 @@ library(ggplot2)
 library(tidyr)
 library(dplyr)
 library(lubridate)
-library(tree)
+library('rpart')
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
@@ -23,7 +23,7 @@ taxi_raw <- query_results("
   SELECT *
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
- #ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
+ -- ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
  LIMIT 100000;
 
 ")
@@ -250,6 +250,20 @@ Now let's try some machine learning on this data set.
 ```{r}
 
 tip_percentages <- na.omit(tip_percentages)
+tip_percentages <- tip_percentages %>%
+  select(rate_code
+         , passenger_count
+         , trip_time_in_secs
+         , trip_distance
+         , payment_type
+         , fare_amount
+         , surcharge
+         , mta_tax
+         , tolls_amount
+         , total_amount
+         , pickup_borough
+         , tip_percentage
+         )
 
 smp_size <- floor(0.75 * nrow(tip_percentages))
 set.seed(123)
@@ -258,7 +272,7 @@ train_ind <- sample(seq_len(nrow(tip_percentages)), size = smp_size)
 train <- tip_percentages[train_ind, ]
 test <- tip_percentages[-train_ind, ]
 
-fit <- rpart(tip_percentage~ trip_time_in_secs + trip_distance + fare_amount, data=train, method="anova") 
+fit <- rpart(tip_percentage ~ . , data=train, method="anova") 
 plot(fit)
 text(fit)
 
