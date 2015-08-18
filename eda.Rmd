@@ -14,9 +14,8 @@ library(dplyr)
 library(lubridate)
 library('rpart') # NOTE: you need to manually install rpart.plot as a separate package
 library('rattle')
+library(corrgram)
 ```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 
 First, I'll pull the data set from my database.
 ```{r}
@@ -25,7 +24,7 @@ taxi_raw <- query_results("
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
  -- ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
- LIMIT 1000000;
+ LIMIT 10000;
 
 ")
 
@@ -77,15 +76,12 @@ taxi_raw <- taxi_raw %>%
     passenger_count = as.integer(passenger_count)
   )
 
-taxi <- taxi_raw
-#taxi <- taxi_raw %>% 
- # tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), 10)
 ```
 
 How many pickups per borough?
 
 ```{r}
-borough_total_pickups <- taxi %>% 
+borough_total_pickups <- taxi_raw %>% 
   filter(!is.na(pickup_borough) & !is.na(dropoff_borough)) %>% 
   group_by(pickup_borough) %>% 
   summarize(count = n())
@@ -96,37 +92,25 @@ Let's perform some EDA.  First, let's look into tipping.  What's the distributio
 TODO: Tried doing a ratio here but it didn't work.  Try again later?
 
 ```{r, echo = FALSE}
-tip_percentages <- taxi %>% 
+taxi <- taxi_raw %>% 
   dplyr::mutate(tip_percentage = tip_amount/fare_amount*100) %>%
   left_join(borough_total_pickups, by = "pickup_borough") %>% 
   group_by(pickup_borough)
   
-ggplot(tip_percentages, aes(tip_percentage, fill=pickup_borough)) + geom_bar(position="dodge", binwidth = .1) + xlim(0,.5)
+ggplot(taxi, aes(tip_percentage, fill=pickup_borough)) + geom_bar(position="dodge", binwidth = .1) + xlim(0,.5)
 
 ```
-
-How many trips per date?  We can see here the lull on January 21st (MLK Day).  There's
-also a dip on Janurary 6th, which is the Epiphany, but I'm not convinced that's why we see less taxi traffic.  Also puzzling is the peak on January 26th (Saturday).
-
-```{r, echo = F}
-jan_taxi <- taxi %>% 
-  group_by(pickup_date) %>% 
-  summarize(trips = n())
-
-ggplot(jan_taxi, aes(x = pickup_date, y = trips, group = 1)) + geom_line(stat= 'identity')
-
-```
-
 
 How many trips per day of week?
 
 ```{r, echo = FALSE}
 days_of_week <- read.csv("/Users/angelaschroeder/Downloads/days_of_week - Sheet1 (1).csv")
 
-taxi <- taxi %>% 
+taxi_days <- taxi %>% 
+  tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), 10) %>% 
   left_join(days_of_week, by = "pickup_date")
 
-taxi %>% 
+taxi_days %>% 
   group_by(weekday) %>% 
   summarize(total_rides = n())
 
@@ -134,6 +118,18 @@ week_levels <- c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday
 
 ggplot(aes(x = factor(weekday, week_levels)), data = taxi) + geom_histogram() + xlab("Day of Week") +
   ylab("Number of Trips") + ggtitle("Trips Per Day")
+```
+
+How many trips per date?  We can see here the lull on January 21st (MLK Day).  There's
+also a dip on Janurary 6th, which is the Epiphany, but I'm not convinced that's why we see less taxi traffic.  Also puzzling is the peak on January 26th (Saturday).
+
+```{r, echo = F}
+jan_taxi <- taxi_days %>% 
+  group_by(pickup_date) %>% 
+  summarize(trips = n())
+
+ggplot(jan_taxi, aes(x = pickup_date, y = trips, group = 1)) + geom_line(stat= 'identity')
+
 ```
 
 Total revenue each day of the week?
@@ -277,16 +273,10 @@ rfit <- rpart(tip_percentage ~ . , data=train)
 rpart.plot(rfit)
 text(rfit)
 
-rattle::fancyRpartPlot(rfit)
+rattle::fancyRpartPlot(rfit) # not super correlated, cash tips aren't recorded :(
 
-
-tree.tip = tree(tip_percentage~trip_time_in_secs, trip_distance, data = tip_percentages)
-summary(tree.taxi)
-plot(tree.taxi)
-text(tree.taxi)
-
-tree.pred = predict(tree.reg, test, type = "class")
-with(test, table(tree.pred,High)) # 82% accuracy
+#tree.pred = predict(tree.reg, test, type = "class")
+#with(test, table(tree.pred,High))
 
 library(class)
 knn.pred = knn(train_num,test_num, train_num1$High, k = 3)
@@ -294,4 +284,29 @@ table(knn.pred, test_num1$High) # 87.5% accuracy
 mean(knn.pred == test_num1$High)
 plot(knn.pred)
 ```
+
+Maybe a correlogram can shed some more light on the relationships between our variables.
+
+```{r}
+taxi_num <- taxi %>% 
+  dplyr::mutate(tip_percentage = tip_amount/fare_amount*100) %>% 
+  select(vendor_id, rate_code, passenger_count, trip_time_in_secs, trip_distance, 
+         pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude,
+         fare_amount, surcharge, mta_tax, tip_amount, tolls_amount, total_amount,
+         tip_percentage)
+
+corrgram(taxi_num, order = TRUE, upper.panel = panel.pie)
+```
+
+Nothing too interesting here... the fare, trip time, trip distance, tip amount total amount, etc. are all positively correlated.  The pickup longitude and latitude seem to only affect each other, which makes sense since in NYC longitudes are negative while latitudes are positive.  Correlograms have been helpful in analyses of other data sets, but here this method just illuminates the lack of strong correlations in our data.
+
+I'm interested in the revenues/profit strategies of specific cabbies.  Let's take a look at this data, grouped by individual taxi.
+
+```{r}
+taxi_indiv <- taxi %>% 
+  
+
+
+```
+
 
