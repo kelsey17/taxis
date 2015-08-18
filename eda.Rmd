@@ -4,7 +4,7 @@ author: "Kelsey Schroeder"
 date: "August 12, 2015"
 output: html_document
 ---
-For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+TODO: Add titles to graphs that are nice
 
 ```{r, echo=FALSE, message = FALSE}
 source('db_connection.r')
@@ -24,7 +24,7 @@ taxi_raw <- query_results("
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
  -- ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
- LIMIT 1000000;
+ LIMIT 100000;
 
 ")
 
@@ -99,7 +99,10 @@ taxi <- taxi_raw %>%
   tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), " ") %>%
   tidyr::separate(pickup_time, c("pickup_hour", "pickup_min", "pickup_sec"), ":") %>% 
   left_join(days_of_week, by = "pickup_date") %>% 
-  mutate(pickup_date = ymd(pickup_date))
+  mutate(pickup_date = ymd(pickup_date)) %>% 
+  mutate(pickup_hour = as.integer(pickup_hour)) %>% 
+  mutate(pickup_min = as.integer(pickup_min)) %>% 
+  mutate(pickup_sec = as.integer(pickup_sec))
   
 ggplot(taxi, aes(tip_percentage, fill=pickup_borough)) + geom_bar(position="dodge", binwidth = .1) + xlim(0,.5)
 ```
@@ -292,7 +295,7 @@ I'm interested in the revenues/profit strategies of specific cabbies.  Let's tak
 
 ```{r}
 taxi_indiv <- taxi %>% 
-  group_by(hack_license, vendor_id, rate_code, pickup_date, pickup_hour, payment_type, dropoff_datetime,
+  group_by(hack_license, vendor_id, rate_code, pickup_date, pickup_hour, payment_type, 
            pickup_borough, dropoff_borough) %>% 
   summarize(total_distance = sum(trip_distance)
             , total_time = sum(trip_time_in_secs)
@@ -300,6 +303,7 @@ taxi_indiv <- taxi %>%
             , total_tips = sum(tip_amount)
             , total_revenue = sum(total_amount)
             , num_different_cars = n_distinct(medallion)
+            , total_trips = n_distinct(dropoff_datetime)
   ) %>% 
   ungroup() 
 ```
@@ -317,12 +321,12 @@ taxi_indiv_rev <- taxi_indiv %>%
 ggplot(taxi_indiv_rev, aes(x = total_revenue)) + geom_histogram(binwidth= 20)
 ```
 
-How about total number of rides, or passengers?
+How about total number of passengers/trips?
 
 ```{r}
 taxi_indiv_pass <- taxi_indiv %>% 
   group_by(hack_license) %>% 
-  summarize(num_passengers = sum(total_num_passengers), num_trips = n_distinct(dropoff_datetime))
+  summarize(num_passengers = sum(total_num_passengers), num_trips = sum(total_trips))
 
 ggplot(taxi_indiv_pass) + geom_histogram(aes(num_passengers)) + xlim(0,400) # will need to change these limits for full data set
 ggplot(taxi_indiv_pass) + geom_histogram(aes(num_trips)) + xlim(0,100)
@@ -336,3 +340,56 @@ taxi_indiv_cars <- taxi_indiv %>%
   summarize(total_cars = sum(num_different_cars)) %>% 
   arrange(desc(total_cars))
 ```
+
+Cabbies who are tipped the best (relative to their revenue):
+
+```{r}
+taxi_indiv_tips <- taxi_indiv %>% 
+  group_by(hack_license) %>% 
+  summarize(total_revenue = sum(total_revenue), total_tips = sum(total_tips)) %>% 
+  mutate(tip_rate = total_tips/total_revenue)
+
+ggplot(taxi_indiv_tips, aes(tip_rate)) + geom_histogram(binwidth = .01)
+```
+
+Number of days worked in the month:
+```{r}
+taxi_indiv_days <- taxi_indiv %>% 
+  group_by(hack_license) %>% 
+  summarize(total_days_worked = n_distinct(pickup_date)) %>% 
+  arrange(desc(total_days_worked))
+```
+
+Maybe we can figure out what shift the cabbies work by labeling their pickup times with a broader category tag.  This assumes a shift change at 5pm (assumptions based on IQuantNY analysis).
+
+```{r}
+taxi_indiv_shifts <- taxi_indiv %>% 
+  mutate(tod = ifelse(pickup_hour>5 & pickup_hour<17, "morning_afternoon", "evening_night")) %>% 
+  group_by(hack_license, tod) %>% 
+  summarize(count = n()) %>% 
+  spread(tod, count, fill = 0) %>% 
+  mutate(morning_per_evening = morning_afternoon/evening_night)
+
+ggplot(taxi_indiv_shifts) + geom_histogram(aes(evening_night), binwidth = 1)
+ggplot(taxi_indiv_shifts) + geom_histogram(aes(morning_afternoon), binwidth = 1)
+ggplot(taxi_indiv_shifts) + geom_histogram(aes(morning_per_evening), binwidth = .1) +
+  xlim(0,5)
+```
+
+Are there certain drivers that have only cash/only card payments? Maybe drive cars without card capabilities?
+
+Most cabbies are about 60% cash.  There are 2 who have mroe than 10 trips (on the 10,000 data set) and all are cash.  None have 0% cash (though 40 have <20% card).
+```{r}
+taxi_indiv_payment <- taxi_indiv %>% 
+  group_by(hack_license, payment_type) %>% 
+  summarize(count = n()) %>% 
+  spread(payment_type, count, fill = 0) %>% 
+  mutate(total = CRD + CSH + DIS + NOC + UNK) %>% 
+  mutate(CRD = CRD/total, CSH = CSH/total, DIS = DIS/total, NOC = NOC/total, UNK = UNK/total) %>% 
+  arrange(desc(CSH)) %>% 
+  filter(total>=10)
+
+ggplot(taxi_indiv_payment) + geom_histogram(aes(CSH), binwidth = .1)
+```
+
+
