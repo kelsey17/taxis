@@ -6,12 +6,6 @@ output: html_document
 ---
 For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-
-```{r}
-```
-
-You can also embed plots, for example:
-
 ```{r, echo=FALSE, message = FALSE}
 source('db_connection.r')
 library(ggplot2)
@@ -217,9 +211,19 @@ What if we look at general pickup/dropoff locations?  Will we find any especiall
 
 ```{r}
 ggplot(taxi, aes( x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/510) + 
-  xlim(-74.01,-73.85) + ylim(40.7,40.85) # having trouble setting this alpha to the correct value. want to be able to pick out specific long/lat points.
+  xlim(-74.01,-73.85) + ylim(40.7,40.85) + theme_bw() # having trouble setting this alpha to the correct value. want to be able to pick out specific long/lat points. Cool map of Manhattan for now!
 
-ggplot(taxi, aes( x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/100)
-
+ggplot(taxi, aes( x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/100) + xlim(-74.4,-73.4) + ylim(40.5,41)
 ```
+
+By zooming in on this graph and identifying landmarks based on longitude/latitude data, I was able to identify the following as popular pick up and drop off locations:
+* LaGuardia Airport
+* Times Square
+* Penn Station/MSG
+* Columbus Circle
+* Car Inspection Station in Brooklyn
+* Dial 7 car/limo service in Queens
+* Brooklyn Driving School
+* Eight Strings and a Whistle
+* Various auto shops
 
