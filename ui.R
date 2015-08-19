@@ -3,14 +3,12 @@ library(ggplot2)
 
 data(dist_taxis, package="ggplot2")
 
-
 demographic_choices = colnames(df_state_demographics)[2:ncol(df_state_demographics)]
 
 shinyUI(fluidPage(
   
-  titlePanel("Simple Census Explorer"),
-  div(HTML("By <a href='http://www.arilamstein.com'>Ari Lamstein</a>. Source code <a href='https://github.com/arilamstein/shiny-statistical-maps'>here</a>.")),
-  
+  titlePanel("Taxi Route Explorer"),
+
   sidebarLayout(
     sidebarPanel(
       selectInput("demographic",
@@ -20,7 +18,7 @@ shinyUI(fluidPage(
       
       selectInput(inputId  = "year", 
                   label    = "Year",
-                  choices  = 2010:2013,
+                  choices  = # find some way to go through all dates,
                   selected = 2013),
       
       sliderInput(inputId = "num_colors",
