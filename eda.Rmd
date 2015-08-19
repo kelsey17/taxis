@@ -13,7 +13,7 @@ library(tidyr)
 library(dplyr)
 library(lubridate)
 library('rpart') # NOTE: you need to manually install rpart.plot as a separate package
-library('rattle')
+library('rattle') # this is giving me serious issues
 library(corrgram)
 library(prob)
 ```
@@ -291,118 +291,4 @@ corrgram(taxi_num, order = TRUE, upper.panel = panel.pie)
 ```
 
 Nothing too interesting here... the fare, trip time, trip distance, tip amount total amount, etc. are all positively correlated.  The pickup longitude and latitude seem to only affect each other, which makes sense since in NYC longitudes are negative while latitudes are positive.  Correlograms have been helpful in analyses of other data sets, but here this method just illuminates the lack of strong correlations in our data.
-
-I'm interested in the revenues/profit strategies of specific cabbies.  Let's take a look at this data, grouped by individual taxi.
-
-```{r}
-taxi_indiv <- taxi %>% 
-  group_by(hack_license, vendor_id, rate_code, pickup_date, pickup_hour, payment_type, 
-           pickup_borough, dropoff_borough) %>% 
-  summarize(total_distance = sum(trip_distance)
-            , total_time = sum(trip_time_in_secs)
-            , total_num_passengers = sum(passenger_count)
-            , total_tips = sum(tip_amount)
-            , total_revenue = sum(total_amount)
-            , num_different_cars = n_distinct(medallion)
-            , total_trips = n_distinct(dropoff_datetime)
-  ) %>% 
-  ungroup() 
-```
-
-Now we have a data set for individual cabs.  Yay!  Let's look at a few different things, starting with
-the total revenue per cab.
-TODO: Use whole data set for this.  The info isn't really accurate without it.  If we can't handle this, could potentially limit date to 2 weeks, 1 week, x total hack licenses, etc.
-
-```{r}
-taxi_indiv_rev <- taxi_indiv %>% 
-  group_by(hack_license) %>% 
-  summarize(total_revenue = sum(total_revenue)) %>% 
-  arrange(desc(total_revenue))
-
-# adjust this when I include full data set
-top_10_earners = c("CFCD208495D565EF66E7DFF9F98764DA"
-                   , "F153D0336BF48F93EC3913548164DDBD"
-                   , "51C1BE97280A80EBFA8DAD34E1956CF6"
-                   , "AB6F028ECDB62E44BE3ACEDE4E935ED6"
-                   , "C5DC32CDE1B4B5A2A0F16029B62A3A10"
-                   , "2BF7915E6DC6252344DA12975B2B3E06"
-                   , "3AAB94CA53FE93A64811F65690654649"
-                   , "F49FD0D84449AE7F72F3BC492CD6C754"
-                   , "847349F8845A667D9AC7CDEDD1C873CB"
-                   , "CE625FD96D0FAFC812A6957139B354A1")
-
-ggplot(taxi_indiv_rev, aes(x = total_revenue)) + geom_histogram(binwidth= 20)
-```
-
-How about total number of passengers/trips?
-
-```{r}
-taxi_indiv_pass <- taxi_indiv %>% 
-  group_by(hack_license) %>% 
-  summarize(num_passengers = sum(total_num_passengers), num_trips = sum(total_trips))
-
-ggplot(taxi_indiv_pass) + geom_histogram(aes(num_passengers)) + xlim(0,400) # will need to change these limits for full data set
-ggplot(taxi_indiv_pass) + geom_histogram(aes(num_trips)) + xlim(0,100)
-```
-
-Total number of different cars driven by cabbie: THIS IS WRONG
-TODO: Figure out why some cabbies apparently drive 132 different cars in a month.
-```{r}
-taxi_indiv_cars <- taxi_indiv %>% 
-  group_by(hack_license) %>% 
-  summarize(total_cars = sum(num_different_cars)) %>% 
-  arrange(desc(total_cars))
-```
-
-Cabbies who are tipped the best (relative to their revenue):
-
-```{r}
-taxi_indiv_tips <- taxi_indiv %>% 
-  group_by(hack_license) %>% 
-  summarize(total_revenue = sum(total_revenue), total_tips = sum(total_tips)) %>% 
-  mutate(tip_rate = total_tips/total_revenue)
-
-ggplot(taxi_indiv_tips, aes(tip_rate)) + geom_histogram(binwidth = .01)
-```
-
-Number of days worked in the month:
-```{r}
-taxi_indiv_days <- taxi_indiv %>% 
-  group_by(hack_license) %>% 
-  summarize(total_days_worked = n_distinct(pickup_date)) %>% 
-  arrange(desc(total_days_worked))
-```
-
-Maybe we can figure out what shift the cabbies work by labeling their pickup times with a broader category tag.  This assumes a shift change at 5pm (assumptions based on IQuantNY analysis).
-
-```{r}
-taxi_indiv_shifts <- taxi_indiv %>% 
-  mutate(tod = ifelse(pickup_hour>5 & pickup_hour<17, "morning_afternoon", "evening_night")) %>% 
-  group_by(hack_license, tod) %>% 
-  summarize(count = n()) %>% 
-  spread(tod, count, fill = 0) %>% 
-  mutate(morning_per_evening = morning_afternoon/evening_night)
-
-ggplot(taxi_indiv_shifts) + geom_histogram(aes(evening_night), binwidth = 1)
-ggplot(taxi_indiv_shifts) + geom_histogram(aes(morning_afternoon), binwidth = 1)
-ggplot(taxi_indiv_shifts) + geom_histogram(aes(morning_per_evening), binwidth = .1) +
-  xlim(0,5)
-```
-
-Are there certain drivers that have only cash/only card payments? Maybe drive cars without card capabilities?
-
-Most cabbies are about 60% cash.  There are 2 who have mroe than 10 trips (on the 10,000 data set) and all are cash.  None have 0% cash (though 40 have <20% card).
-```{r}
-taxi_indiv_payment <- taxi_indiv %>% 
-  group_by(hack_license, payment_type) %>% 
-  summarize(count = n()) %>% 
-  spread(payment_type, count, fill = 0) %>% 
-  mutate(total = CRD + CSH + DIS + NOC + UNK) %>% 
-  mutate(CRD = CRD/total, CSH = CSH/total, DIS = DIS/total, NOC = NOC/total, UNK = UNK/total) %>% 
-  arrange(desc(CSH)) %>% 
-  filter(total>=10)
-
-ggplot(taxi_indiv_payment) + geom_histogram(aes(CSH), binwidth = .1)
-```
-
 
