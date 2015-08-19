@@ -15,6 +15,7 @@ library(lubridate)
 library('rpart') # NOTE: you need to manually install rpart.plot as a separate package
 library('rattle')
 library(corrgram)
+library(prob)
 ```
 
 First, I'll pull the data set from my database.
@@ -24,7 +25,7 @@ taxi_raw <- query_results("
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
  -- ORDER BY trips.hack_license, trips.medallion, trips.pickup_datetime
- LIMIT 100000;
+ LIMIT 1000000;
 
 ")
 
@@ -317,6 +318,18 @@ taxi_indiv_rev <- taxi_indiv %>%
   group_by(hack_license) %>% 
   summarize(total_revenue = sum(total_revenue)) %>% 
   arrange(desc(total_revenue))
+
+# adjust this when I include full data set
+top_10_earners = c("CFCD208495D565EF66E7DFF9F98764DA"
+                   , "F153D0336BF48F93EC3913548164DDBD"
+                   , "51C1BE97280A80EBFA8DAD34E1956CF6"
+                   , "AB6F028ECDB62E44BE3ACEDE4E935ED6"
+                   , "C5DC32CDE1B4B5A2A0F16029B62A3A10"
+                   , "2BF7915E6DC6252344DA12975B2B3E06"
+                   , "3AAB94CA53FE93A64811F65690654649"
+                   , "F49FD0D84449AE7F72F3BC492CD6C754"
+                   , "847349F8845A667D9AC7CDEDD1C873CB"
+                   , "CE625FD96D0FAFC812A6957139B354A1")
 
 ggplot(taxi_indiv_rev, aes(x = total_revenue)) + geom_histogram(binwidth= 20)
 ```

@@ -1,0 +1,15 @@
+---
+title: "profit_strategies"
+author: "Kelsey Schroeder"
+date: "8/19/2015"
+output: html_document
+---
+
+Here, let's investigate profit strategies for individual taxi drivers.  In order to do this, I'll first examine the data for our top 10 earners.
+
+```{r message = FALSE, results = 'hide'}
+knit('eda.rmd', tangle=TRUE)
+source('eda.R')
+```
+
+```
