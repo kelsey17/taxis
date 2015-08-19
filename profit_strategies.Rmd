@@ -14,6 +14,7 @@ library(tidyr)
 library(dplyr)
 library(lubridate)
 library(corrgram)
+library(rpart.plot)
 ```
 
 ```{r}
@@ -100,9 +101,7 @@ strat_indiv <- taxi_strat %>%
   ungroup() 
 ```
 
-Who had the highest revenue?
-Let's look at the number of hours these cabbies worked in a week.
-
+Does more hours always mean more revenue?
 
 ```{r}
 strat_indiv_rev_time <- strat_indiv %>% 
@@ -112,5 +111,118 @@ strat_indiv_rev_time <- strat_indiv %>%
 ggplot(strat_indiv_rev_time, aes(x = total_time, y = total_revenue)) + geom_point()
 ```
 
+Looks like the relationship is pretty linear (as expected).  Can we find some other correlations in our data frame?
 
+```{r}
+corrgram(strat_indiv, order = TRUE, upper.panel = panel.pie)
+```
 
+Trips to revenue?
+```{r}
+strat_indiv_trips <- strat_indiv %>% 
+  group_by(hack_license) %>% 
+  summarize(total_revenue = sum(total_revenue), total_trips = sum(total_trips))
+
+ggplot(strat_indiv_trips, aes(x = total_trips, y = total_revenue)) + geom_point()
+```
+
+This is again a pretty linear relationship.  I'm interested in the outliers, in particular drivers who had fewer trips but more revenue, or fewer hours but more revenue.
+
+Shall we try some machine learning, perhaps?
+
+```{r, echo = FALSE}
+strat_indiv_ml <- strat_indiv %>% 
+  mutate(total_num_trips = total_trips) %>% 
+  spread(payment_type, total_trips, fill = 0) %>%
+  group_by(hack_license) %>% 
+  summarize(mean_pickup_hour = mean(pickup_hour)
+            , total_hours = sum(total_time)/3600
+            , total_distance = sum(total_distance)
+            , total_num_passengers = sum(total_num_passengers)
+            , total_trips = sum(total_num_trips)
+            , CRD = sum(CRD)/total_trips
+            , CSH = sum(CSH)/total_trips
+            , total_revenue = sum(total_revenue)) %>% 
+  mutate(rev_level = ifelse(total_revenue>10000, "high", 
+                            ifelse(total_revenue<5000, "low", "mid")))
+  
+fit <- rpart(rev_level ~ .-total_revenue -hack_license, data = strat_indiv_ml, method = "class")
+prp(fit)
+```
+
+This decision tree reveals three paths to high revenue:
+1. Many hours (>68), lots of distance (>1981 miles), many trips (>682)
+2. Many hours (>68), LOTS of distance (>2272 miles)
+3. MANY hours (>151)
+
+This begs the question, which path is the most lucrative?
+
+```{r}
+ml_best <- strat_indiv_ml %>% 
+  filter(rev_level == "high") %>% 
+  mutate(win_method = ifelse(total_hours >= 68 & total_distance >= 1981 & total_trips >= 682, "t_trad", 
+                             ifelse(total_hours >= 68 & total_distance >= 2272, "t_dist",
+                                    ifelse(total_hours >= 151, "t_hrs", "unknown")))) %>% 
+  filter(win_method!="unknown") 
+
+total_method <- ml_best %>% 
+  group_by(win_method) %>% 
+  summarize(count = n())
+
+total_rev <- ml_best %>% 
+  group_by(win_method) %>% 
+  summarize(total_revenue = sum(total_revenue)) %>% 
+  left_join(total_method, by = "win_method") %>% 
+  mutate(rev_per_driver = total_revenue/count)
+total_rev
+```
+
+So, in our sample of 118 high-performing taxi drivers, it looks like the traditional method produced the most revenue per driver, closely followed by the distance method and the hours method. Let's compare the hours worked with each of these groups, in order to isolate the strategy with the least cost (assuming cost = hours working).
+
+```{r, echo = FALSE}
+
+ml_best %>% 
+  select(hack_license, total_hours, win_method) %>% 
+  ungroup() %>% 
+  arrange(total_hours)
+
+ggplot(ml_best, aes(x = total_hours, y = total_revenue, color = win_method, group = win_method)) + 
+  geom_point() + xlab("Hours Worked") + ylab("Total Revenue") + ggtitle("High Performing NYC Cab Drivers, January 2013")
+```
+
+One observation from this graph is that the drivers in the distance category seem to have a better revenue/hours ratio than drivers in the other groups.  Traditional drivers scored the most revenue overall, though this could be because they represent about 85% of our random sample.
+
+Let's take a closer look at the 8 drivers in the distance group.  How are they covering so much distance in so little time?
+
+```{r}
+t_dist <- c("2BABCBBC7DBA6D59D430D07649922302"
+            , "2C5E9C24BD0F520BA28AC72259DA74C2"
+            , "302AE56ACEF3AA54D3DE0842855EC4D0"
+            , "40E1C4F6306C07AAA6EF912905B2F291"
+            , "4565A3A90EA92EF6998A3C99FB073CAC"
+            , "4FA15EFD3AEE3E1D0F5502D07AB4158E"
+            , "7EBEC11FE43F875FAE0D6AD96723B3DB"
+            , "FA232B96BDFE1CA817E6F064CCBA4E2E")
+
+dist_taxis <- taxi_strat[taxi_strat$hack_license %in% t_dist,]
+
+# can add more variables here if interesting
+dist_taxis <- dist_taxis %>% 
+  select(hack_license, rate_code, pickup_hour, passenger_count, pickup_longitude, pickup_latitude, 
+         dropoff_latitude, dropoff_longitude, weekday) %>% 
+  filter(pickup_longitude!=0 & pickup_latitude!=0 & dropoff_longitude !=0 & dropoff_latitude !=0)
+
+ggplot(dist_taxis, aes(x = pickup_longitude, y = pickup_latitude, color = hack_license, group = hack_license)) + 
+  geom_point(alpha = 1/10) + xlim(-74.03, -73.94) + ylim(40.7,40.8) + theme(legend.position="none")
+# two blips are JFK and LaGuardia
+
+# Let's view pickups by cabbie: another idea is to go day-by-day!!!!
+# could make a shiny widget with this
+
+dist_taxis1 <- dist_taxis[dist_taxis$hack_license %in% t_dist[1],]
+dist_taxis1 <- dist_taxis1 %>% 
+  mutate(pickup_date = as.character(pickup_date)) %>% 
+   filter(pickup_date == "2013-01-05")
+ggplot(dist_taxis1) + theme(legend.position = "none") + geom_point(aes(x = pickup_longitude, y = pickup_latitude), color = "red") + geom_point(aes(x = dropoff_longitude, y = dropoff_latitude), color = "blue")
+
+```
