@@ -16,6 +16,7 @@ library(dplyr)
 library(lubridate)
 library(corrgram)
 library(rpart.plot)
+library(gridExtra)
 ```
 
 TODO: Set seed somehow so this data is consistent
@@ -192,39 +193,81 @@ ggplot(ml_best, aes(x = total_hours, y = total_revenue, color = win_method, grou
   geom_point() + xlab("Hours Worked") + ylab("Total Revenue") + ggtitle("High Performing NYC Cab Drivers, January 2013")
 ```
 
-One observation from this graph is that the drivers in the distance category seem to have a better revenue/hours ratio than drivers in the other groups.  Traditional drivers scored the most revenue overall, though this could be because they represent about 85% of our random sample.
-
-Let's take a closer look at the 8 drivers in the distance group.  How are they covering so much distance in so little time?
+Let's look at airport pickups: what percentage of cab drivers spend time picking up at the airport?
 
 ```{r}
-t_dist <- c("2BABCBBC7DBA6D59D430D07649922302"
-            , "2C5E9C24BD0F520BA28AC72259DA74C2"
-            , "302AE56ACEF3AA54D3DE0842855EC4D0"
-            , "40E1C4F6306C07AAA6EF912905B2F291"
-            , "4565A3A90EA92EF6998A3C99FB073CAC"
-            , "4FA15EFD3AEE3E1D0F5502D07AB4158E"
-            , "7EBEC11FE43F875FAE0D6AD96723B3DB"
-            , "FA232B96BDFE1CA817E6F064CCBA4E2E")
+airports <- taxi_strat %>% 
+  mutate(airport_name = ifelse(pickup_longitude > -73.889 & pickup_longitude < -73.855
+                               & pickup_latitude > 40.767 & pickup_latitude < 40.786, "LGA",
+                        ifelse(pickup_longitude > -73.823 & pickup_longitude < -73.748
+                               & pickup_latitude > 40.621 & pickup_latitude < 40.663, "JFK",
+                               "none"))) 
+airport_indiv <- airports %>% 
+  group_by(hack_license, airport_name) %>% 
+  summarize(count = n(), total_revenue = sum(total_amount)) %>% 
+  spread(airport_name, count, fill = 0) %>% 
+  group_by(hack_license) %>% 
+  summarize(total_revenue = sum(total_revenue), JFK = sum(JFK), LGA = sum(LGA), none = sum(none)) %>% 
+  mutate(airport_trips = JFK + LGA, total = JFK + LGA + none, airport_percent = airport_trips/total,
+         JFK_percent = JFK/airport_trips)
 
-dist_taxis <- taxi_strat[taxi_strat$hack_license %in% t_dist,]
+ggplot(aes(x = airport_percent, y = total_revenue), data = airport_indiv) + geom_point() + xlim(0,.2) +
+  geom_smooth(se = F)
 
-# can add more variables here if interesting
-dist_taxis <- dist_taxis %>% 
-  select(hack_license, rate_code, pickup_hour, passenger_count, pickup_longitude, pickup_latitude, 
-         dropoff_latitude, dropoff_longitude, weekday, pickup_date) %>% 
-  filter(pickup_longitude!=0 & pickup_latitude!=0 & dropoff_longitude !=0 & dropoff_latitude !=0)
+airport_indiv %>% 
+  filter(airport_percent == 0)
 
-ggplot(dist_taxis, aes(x = pickup_longitude, y = pickup_latitude, color = hack_license, group = hack_license)) + 
-  geom_point(alpha = 1/10) + xlim(-74.03, -73.94) + ylim(40.7,40.8) + theme(legend.position="none")
-# two blips are JFK and LaGuardia
+# About 10% of cabbies did not pick up anyone from an airport in January.
 
-# Let's view pickups by cabbie: another idea is to go day-by-day!!!!
-# could make a shiny widget with this
-
-dist_taxis1 <- dist_taxis[dist_taxis$hack_license %in% t_dist[1],]
-dist_taxis1 <- dist_taxis1 %>% 
-  mutate(pickup_date = as.character(pickup_date)) %>% 
-   filter(pickup_date == "2013-01-07")
-ggplot(dist_taxis1) + theme(legend.position = "none") + geom_point(aes(x = pickup_longitude, y = pickup_latitude), color = "red") + geom_point(aes(x = dropoff_longitude, y = dropoff_latitude), color = "blue")
-
+ggplot(data = airports_indiv, aes(x = JFK_percent, y = total_revenue)) + geom_point()
 ```
+
+It doesn't look like more airport pickups necessarily means more revenue.  Similarly, there doesn't seem to be much of a difference in revenue between the two airports (although pickups from JFK are flat rate and pickups from LGA are not).
+
+```{r}
+airport_hours <- airports %>% 
+  filter(airport_name!="none") %>% 
+  group_by(pickup_hour) %>% 
+  summarize(count = n(), total_revenue = sum(total_amount))
+  
+bp <- ggplot(data = airport_hours)
+bp_count <- bp + geom_line(aes(x = pickup_hour, y = count)) + ggtitle("Airport Pickup Counts")
+bp_rev <- bp + geom_line(aes(x = pickup_hour, y = total_revenue)) + ggtitle("Airport Pickup Revenue")
+```
+
+Looks like prime time for an airport pickup is around 4pm. Is this the case for pickups in general?
+
+```{r}
+times <- taxi_strat %>% 
+  group_by(pickup_hour) %>% 
+  summarize(count = n(), total_revenue = sum(total_amount))
+  
+bp2 <- ggplot(data = times)
+bp2_count <- bp2 + geom_line(aes(x = pickup_hour, y = count)) + ggtitle("Pickup Counts")
+bp2_rev <- bp2 + geom_line(aes(x = pickup_hour, y = total_revenue)) + ggtitle("Pickup Revenue")
+
+grid.arrange(bp_count, bp2_count, ncol = 1)
+grid.arrange(bp_rev, bp2_rev, ncol = 1)
+```
+
+Notice that general pickups seem to dip at around 4pm, while airport pickups rise.  So, the few cabbies that do pickups at 4pm go to the airport.  We see a similar shape with the revenue graphs.
+
+```{r}
+airport_percent <- airport_hours %>% 
+  left_join(times, by = "pickup_hour") %>% 
+  mutate(count_percent = count.x/count.y, rev_percent = total_revenue.x/total_revenue.y)
+
+bp3 <- ggplot(data = airport_percent)
+bp3_count <- bp3 + geom_line(aes(x = pickup_hour, y = count_percent)) + 
+  ggtitle("Percentage of Airport Pickups")
+bp3_rev <- bp3 + geom_line(aes(x = pickup_hour, y = rev_percent)) + 
+  ggtitle("Percentage of Airport Pickup Revenue")
+  
+grid.arrange(bp3_count, bp3_rev)
+```
+
+These two graphs tell a similar story: at 5am and 4pm, we see an increase in the percentage of pickups at airports.  The 5am peak is understandable: early flights are arriving, and there are probably fewer potential passengers on the streets so early.  The 4pm peak is a little more surprising, however.  Not sure what to make of this as of yet.
+
+
+
+

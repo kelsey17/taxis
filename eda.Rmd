@@ -290,5 +290,24 @@ taxi_num <- taxi %>%
 corrgram(taxi_num, order = TRUE, upper.panel = panel.pie)
 ```
 
-Nothing too interesting here... the fare, trip time, trip distance, tip amount total amount, etc. are all positively correlated.  The pickup longitude and latitude seem to only affect each other, which makes sense since in NYC longitudes are negative while latitudes are positive.  Correlograms have been helpful in analyses of other data sets, but here this method just illuminates the lack of strong correlations in our data.
+Nothing too interesting here... the fare, trip time, trip distance, tip amount total amount, etc. are all positively correlated.  The pickup longitude and latitude seem to only affect each other, which makes sense since in NYC longitudes are negative while latitudes are positive.  Correlograms have been helpful in analyses of other data sets, but here this method just illuminates the lack of surprising correlations in our data.
+
+Let's take a look at trip efficiency.  Here we'll define efficiency as trip distance/trip time (this will give us the average mph of the trip). 
+
+```{r}
+taxi_efficiency <- taxi %>% 
+  mutate(mph = trip_distance/(trip_time_in_secs/3600)) 
+
+ggplot(data = taxi_efficiency, aes(x = pickup_hour, y = mph)) + geom_point()
+```
+
+
+
+
+
+
+
+
+
+
 
