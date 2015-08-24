@@ -12,6 +12,7 @@ library(tidyr)
 library(dplyr)
 library(lubridate)
 library(corrgram)
+library(NMF)
 taxi_strat_raw <- query_results("
   SELECT *
  FROM trips
@@ -65,7 +66,7 @@ taxi_strat_raw <- taxi_strat_raw %>%
     passenger_count = as.integer(passenger_count)
   )
 borough_total_pickups <- taxi_strat_raw %>% 
-  filter(!is.na(pickup_borough) & !is.na(dropoff_borough)) %>% 
+  dplyr::filter(!is.na(pickup_borough) & !is.na(dropoff_borough)) %>% 
   group_by(pickup_borough) %>% 
   summarize(borough_pickups = n())
 days_of_week <- read.csv("days_of_week - Sheet1 (1).csv")
@@ -183,4 +184,21 @@ taxi_indiv_payment <- taxi_indiv %>%
 
 ggplot(taxi_indiv_payment) + geom_histogram(aes(CSH), binwidth = .05)
 ```
+
+Let's look at cabbies' driving schedules.  We can use NMF to find relationships between different pickup hours of trips.
+```{r}
+taxi_indiv_nmf <- taxi_indiv %>% 
+  group_by(hack_license, pickup_hour) %>% 
+  summarize(count = n()) %>% 
+  mutate(count = ifelse(count>5,1,0)) %>% 
+  dplyr::filter(!is.na(count), !is.na(hack_license), !is.na(pickup_hour)) %>% 
+  spread(pickup_hour, count, fill = 0) %>% 
+  select(-hack_license)
+
+taxi_indiv_nmf <- as.matrix(taxi_indiv_nmf)
+taxi_indiv_nmf <- na.omit(taxi_indiv_nmf)
+
+nmf_taxi <- nmf(as.matrix(taxi_indiv_nmf), rank = 4, nrun = 10)
+```
+
 

@@ -13,7 +13,7 @@ library(tidyr)
 library(dplyr)
 library(lubridate)
 library('rpart') # NOTE: you need to manually install rpart.plot as a separate package
-library('rattle') # this is giving me serious issues
+library(rpart.plot)
 library(corrgram)
 library(prob)
 ```
@@ -82,16 +82,14 @@ How many pickups per borough?
 
 ```{r}
 borough_total_pickups <- taxi_raw %>% 
-  filter(!is.na(pickup_borough) & !is.na(dropoff_borough)) %>% 
+  dplyr::filter(!is.na(pickup_borough) & !is.na(dropoff_borough)) %>% 
   group_by(pickup_borough) %>% 
   summarize(borough_pickups = n())
 ```
 
-Let's perform some EDA.  First, let's look into tipping.  What's the distribution of tip percentages? 
+Let's perform some EDA.  How many trips per day of week?
 
-TODO: Tried doing a ratio here but it didn't work.  Try again later?
-
-```{r, echo = FALSE}
+```{r, echo = FALSE, message = FALSE}
 days_of_week <- read.csv("days_of_week - Sheet1 (1).csv")
 
 taxi <- taxi_raw %>% 
@@ -104,13 +102,7 @@ taxi <- taxi_raw %>%
   mutate(pickup_hour = as.integer(pickup_hour)) %>% 
   mutate(pickup_min = as.integer(pickup_min)) %>% 
   mutate(pickup_sec = as.integer(pickup_sec))
-  
-ggplot(taxi, aes(tip_percentage, fill=pickup_borough)) + geom_bar(position="dodge", binwidth = .1) + xlim(0,.5)
-```
 
-How many trips per day of week?
-
-```{r, echo = FALSE}
 taxi %>% 
   group_by(weekday) %>% 
   summarize(total_rides = n())
@@ -122,20 +114,21 @@ ggplot(aes(x = factor(weekday, week_levels)), data = taxi) + geom_histogram() + 
 ```
 
 How many trips per date?  We can see here the lull on January 21st (MLK Day).  There's
-also a dip on Janurary 6th, which is the Epiphany, but I'm not convinced that's why we see less taxi traffic.  Also puzzling is the peak on January 26th (Saturday).
+also a dip on Janurary 6th (Sunday), which is the Epiphany, but I'm not convinced that's why we see less taxi traffic.  Also puzzling is the peak on January 26th (Saturday).
 
-```{r, echo = F}
-jan_taxi <- taxi_days %>% 
+```{r, echo = F, message = FALSE}
+jan_taxi <- taxi %>% 
   group_by(pickup_date) %>% 
   summarize(trips = n())
 
-ggplot(jan_taxi, aes(x = pickup_date, y = trips, group = 1)) + geom_line(stat= 'identity')
+ggplot(jan_taxi, aes(x = pickup_date, y = trips, group = 1)) + geom_line(stat= 'identity') +
+  ylab("Number of Trips") + xlab("Pickup Date") + ggtitle("Number of Daily Trips in January 2013")
 ```
 
 Total revenue each day of the week?
 TODO: See if this is statistically significant
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, message = FALSE}
 taxi %>% 
   group_by(weekday) %>% 
   summarize(revenue = sum(total_amount)) %>% 
@@ -149,7 +142,7 @@ Checking out the toll situation in the city.  High tolls for Staten Island!
 
 ```{r}
 taxi %>% 
-  filter(tolls_amount>0) %>% 
+  dplyr::filter(tolls_amount>0) %>% 
   group_by(pickup_borough, dropoff_borough) %>% 
   summarize(num_rides_w_tolls = n(), average_toll = mean(tolls_amount)) %>% 
   ungroup() %>% 
@@ -159,16 +152,16 @@ taxi %>%
 
 How about trip length?
 
-```{r}
+```{r, echo = FALSE, message = FALSE}
 taxi_length <- taxi %>% 
   select(trip_distance, trip_time_in_secs) %>% 
-  filter(trip_distance>0) 
+  dplyr::filter(trip_distance>0) 
 
 taxi_length$trip_distance <- round(taxi_length$trip_distance)
 taxi_length$trip_time_in_secs <- round(taxi_length$trip_time_in_secs, digits = -1)
 
 ggplot(taxi_length, aes(x=trip_distance, y= trip_time_in_secs)) +
-    geom_point(shape=19, alpha=1/10)
+    geom_point(shape=19, alpha=1/50) + xlim(0,30)
 
 summary(taxi_length) 
 ```
@@ -185,7 +178,7 @@ Notice the peak at $52.  Perhaps this is a flat rate?
 
 ```{r}
 taxi52 <- taxi %>% 
-  filter(fare_amount == 52)
+  dplyr::filter(fare_amount == 52)
 
 ggplot(taxi52, aes(x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/10) + 
   xlim(-74.2,-73.6) + ylim(40.5,41)
@@ -195,21 +188,8 @@ Here we see two clusters.  Let's examine more closely.
 
 ```{r}
 # Checking out the cluster to the right
-ggplot(taxi52, aes(x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/10) + 
-  xlim(-73.9,-73.7) + ylim(40.635,40.65) # JFK
-  
-ggplot(taxi52, aes(x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/10) + 
-  xlim(-74,-73.97) + ylim(40.745,40.775) # unclear
-
 ggplot(taxi52, aes(x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/10) + 
   xlim(-74.05,-73.75)+ ylim(40.5,41)
-
-taxi52_pickups <- taxi52 %>% 
-  filter(dropoff_longitude < -73.97 & dropoff_longitude > -74 & dropoff_latitude > 40.745 &
-           dropoff_latitude < 40.775)
-
-ggplot(taxi52_pickups, aes(x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/10) +
-  xlim(-75,-72.5) + ylim(40.5,41)
 ```
 
 And would you look at that!  The cluster to the right is at approximately -73.78 longitude and 40.645 latitude, landing us right on top of JFK airport.  If we look at the pickup data for the other point in the dropoff graph, we find that these customers were picked up at the airport and brough to various places in NYC.  The internet confirms that this ride is a flat rate either way.
@@ -238,8 +218,7 @@ Now let's try some machine learning on this data set.
 
 ```{r}
 
-tip_percentages <- na.omit(tip_percentages)
-tip_percentages <- tip_percentages %>%
+tip_percentages <- taxi %>%
   select(rate_code
          , passenger_count
          , trip_time_in_secs
@@ -253,6 +232,7 @@ tip_percentages <- tip_percentages %>%
          , pickup_borough
          , tip_percentage
          )
+tip_percentages <- na.omit(tip_percentages)
 
 smp_size <- floor(0.75 * nrow(tip_percentages))
 set.seed(123)
@@ -262,19 +242,7 @@ train <- tip_percentages[train_ind, ]
 test <- tip_percentages[-train_ind, ]
 
 rfit <- rpart(tip_percentage ~ . , data=train) 
-rpart.plot(rfit)
-text(rfit)
-
-rattle::fancyRpartPlot(rfit) # not super correlated, cash tips aren't recorded :(
-
-#tree.pred = predict(tree.reg, test, type = "class")
-#with(test, table(tree.pred,High))
-
-library(class)
-knn.pred = knn(train_num,test_num, train_num1$High, k = 3)
-table(knn.pred, test_num1$High) # 87.5% accuracy
-mean(knn.pred == test_num1$High)
-plot(knn.pred)
+prp(rfit)
 ```
 
 Maybe a correlogram can shed some more light on the relationships between our variables.
@@ -296,18 +264,41 @@ Let's take a look at trip efficiency.  Here we'll define efficiency as trip dist
 
 ```{r}
 taxi_efficiency <- taxi %>% 
-  mutate(mph = trip_distance/(trip_time_in_secs/3600)) 
+  dplyr::filter(trip_distance>0, trip_time_in_secs>0) %>% 
+  mutate(mph = trip_distance/(trip_time_in_secs/3600)) %>% 
+  arrange(mph)
 
-ggplot(data = taxi_efficiency, aes(x = pickup_hour, y = mph)) + geom_point()
+ggplot(data = taxi_efficiency, aes(x = pickup_hour, y = mph)) + 
+  geom_point(alpha = 1/510) + ylim(0,30) + geom_smooth(se = F)
 ```
 
+Looks like the efficiency peaks at around 4:30am but remains pretty consistent from 7am-7pm.  We see higher efficiency outside of work hours, as expected.
 
 
+```{r}
+taxi_inefficient <- taxi_efficiency %>% 
+  dplyr::filter(mph< 2, mph >.01, pickup_longitude!=0, pickup_latitude!=0)
 
+ggplot(data = taxi_inefficient) + 
+  geom_point(aes(y = pickup_latitude, x = pickup_longitude),color = "blue", alpha = 1/25) + 
+  xlim(-74.02,-73.94) + ylim(40.7,40.8) + 
+  geom_point(aes(x = dropoff_longitude, y = dropoff_latitude), color = "red", alpha = 1/25)
 
+```
 
+Perhaps we can use machine learning to predict the length of a trip.
 
+```{r}
+efficient_ml <- taxi_efficiency %>% 
+  mutate(trip_time_in_mins = trip_time_in_secs/60) %>% 
+  dplyr::filter(dropoff_latitude<41, pickup_latitude<41) %>% 
+  select(rate_code, pickup_date, pickup_hour, passenger_count, pickup_longitude, pickup_latitude,
+         dropoff_latitude, dropoff_longitude, pickup_borough, dropoff_borough, payment_type,
+         surcharge, tolls_amount,weekday, trip_time_in_mins)
 
+fit <- rpart(trip_time_in_mins ~ ., data = efficient_ml, method = "anova")
+prp(fit)
+```
 
 
 
