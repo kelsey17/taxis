@@ -9,6 +9,7 @@ Here, let's investigate profit strategies for individual taxi drivers.  In order
 
 ```{r setup, message = FALSE, results = 'hide'}
 source('db_connection.r')
+library(markdown)
 library(ggplot2)
 library(tidyr)
 library(dplyr)
@@ -17,6 +18,7 @@ library(corrgram)
 library(rpart.plot)
 ```
 
+TODO: Set seed somehow so this data is consistent
 ```{r}
 taxi_strat_raw <- query_results("
   SELECT *
@@ -209,7 +211,7 @@ dist_taxis <- taxi_strat[taxi_strat$hack_license %in% t_dist,]
 # can add more variables here if interesting
 dist_taxis <- dist_taxis %>% 
   select(hack_license, rate_code, pickup_hour, passenger_count, pickup_longitude, pickup_latitude, 
-         dropoff_latitude, dropoff_longitude, weekday) %>% 
+         dropoff_latitude, dropoff_longitude, weekday, pickup_date) %>% 
   filter(pickup_longitude!=0 & pickup_latitude!=0 & dropoff_longitude !=0 & dropoff_latitude !=0)
 
 ggplot(dist_taxis, aes(x = pickup_longitude, y = pickup_latitude, color = hack_license, group = hack_license)) + 
@@ -222,7 +224,7 @@ ggplot(dist_taxis, aes(x = pickup_longitude, y = pickup_latitude, color = hack_l
 dist_taxis1 <- dist_taxis[dist_taxis$hack_license %in% t_dist[1],]
 dist_taxis1 <- dist_taxis1 %>% 
   mutate(pickup_date = as.character(pickup_date)) %>% 
-   filter(pickup_date == "2013-01-05")
+   filter(pickup_date == "2013-01-07")
 ggplot(dist_taxis1) + theme(legend.position = "none") + geom_point(aes(x = pickup_longitude, y = pickup_latitude), color = "red") + geom_point(aes(x = dropoff_longitude, y = dropoff_latitude), color = "blue")
 
 ```
