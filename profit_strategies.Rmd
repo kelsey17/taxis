@@ -220,6 +220,18 @@ airport_indiv %>%
 # About 10% of cabbies did not pick up anyone from an airport in January.
 
 ggplot(data = airports_indiv, aes(x = JFK_percent, y = total_revenue)) + geom_point()
+
+# what about airport pickups by date?
+
+airport_date <- airports %>% 
+  group_by(pickup_date, airport_name) %>% 
+  summarize(count = n()) %>% 
+  spread(airport_name, count) %>% 
+  mutate(airport = JFK + LGA) 
+
+ggplot(data = airport_date, aes(x = pickup_date, y = airport)) + geom_line() + 
+  xlab("Pickup Date") + ylab ("Number of Airport Pickups") + ggtitle("Airport Pickups in January")
+  
 ```
 
 It doesn't look like more airport pickups necessarily means more revenue.  Similarly, there doesn't seem to be much of a difference in revenue between the two airports (although pickups from JFK are flat rate and pickups from LGA are not).

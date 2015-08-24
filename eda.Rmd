@@ -4,8 +4,6 @@ author: "Kelsey Schroeder"
 date: "August 12, 2015"
 output: html_document
 ---
-TODO: Add titles to graphs that are nice
-
 ```{r, echo=FALSE, message = FALSE}
 source('db_connection.r')
 library(ggplot2)
@@ -129,12 +127,15 @@ Total revenue each day of the week?
 TODO: See if this is statistically significant
 
 ```{r, echo = FALSE, message = FALSE}
-taxi %>% 
-  group_by(weekday) %>% 
+taxi_days <- taxi %>% 
+  group_by(pickup_date, weekday) %>% 
   summarize(revenue = sum(total_amount)) %>% 
   arrange(desc(revenue))
 
-ggplot(taxi, aes(x = factor(weekday, week_levels)), y = revenue) + geom_bar() + 
+t.test(revenue ~ weekday, data = taxi_days)
+
+
+ggplot(taxi_days, aes(x = weekday, y = revenue)) + geom_boxplot() + 
   xlab("Day of Week") + ylab("Total Revenue ($)") + ggtitle("Revenue Per Day of Week")
 ```
 
@@ -211,7 +212,6 @@ By zooming in on this graph and identifying landmarks based on longitude/latitud
 * Car Inspection Station in Brooklyn
 * Dial 7 car/limo service in Queens
 * Brooklyn Driving School
-* Eight Strings and a Whistle
 * Various auto shops
 
 Now let's try some machine learning on this data set.

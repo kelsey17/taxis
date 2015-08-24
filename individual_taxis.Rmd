@@ -14,7 +14,8 @@ library(lubridate)
 library(corrgram)
 library(NMF)
 taxi_strat_raw <- query_results("
-  SELECT *
+ SELECT setseed(.5); 
+ SELECT *
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
  WHERE trips.hack_license IN (
