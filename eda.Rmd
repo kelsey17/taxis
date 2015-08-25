@@ -131,11 +131,26 @@ taxi_days <- taxi %>%
   group_by(pickup_date, weekday) %>% 
   summarize(revenue = sum(total_amount)) %>% 
   arrange(desc(revenue))
+taxi_days_Su <- taxi_days %>% 
+  dplyr::filter(weekday == "Sunday")
+
+taxi_days %>%
+  ungroup %>% 
+  summarize(mean_revenue = mean(revenue))
 
 t.test(revenue ~ weekday, data = taxi_days)
+t.test(taxi_days_Su$revenue, mu=450292.7)
+t.test(taxi_days_Th$revenue, taxi_days_F$revenue)
 
+qqnorm(taxi_days_S$revenue)                     ### output not shown
+qqline(taxi_days_S$revenue)                     ### output not shown
+plot(density(taxi_days_S$revenue))              ### output not shown
+shapiro.test(taxi_days_Su$revenue)
+#one sample t test: compare each mean to the total mean?
 
-ggplot(taxi_days, aes(x = weekday, y = revenue)) + geom_boxplot() + 
+week_levels <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+ggplot(taxi_days, aes(x = factor(weekday,week_levels), y = revenue)) + geom_boxplot() + 
   xlab("Day of Week") + ylab("Total Revenue ($)") + ggtitle("Revenue Per Day of Week")
 ```
 
@@ -167,7 +182,7 @@ ggplot(taxi_length, aes(x=trip_distance, y= trip_time_in_secs)) +
 summary(taxi_length) 
 ```
 
-Looks like the vast majority of trips are within 25 miles and 50 minutes.  This is expected.  Mean distance is 3.39 miles, mean time is about 13 minutes (802 seconds).
+Looks like the vast majority of trips are within 25 miles and 50 minutes.  Mean distance is 3.39 miles, mean time is about 13 minutes (802 seconds).
 
 Can we find any trends with trips to airports? Perhaps there's a flat rate fare.  Here's a histogram of fare amounts (not counting surcharges, tip, tolls, etc.).
 
@@ -260,7 +275,7 @@ corrgram(taxi_num, order = TRUE, upper.panel = panel.pie)
 
 Nothing too interesting here... the fare, trip time, trip distance, tip amount total amount, etc. are all positively correlated.  The pickup longitude and latitude seem to only affect each other, which makes sense since in NYC longitudes are negative while latitudes are positive.  Correlograms have been helpful in analyses of other data sets, but here this method just illuminates the lack of surprising correlations in our data.
 
-Let's take a look at trip efficiency.  Here we'll define efficiency as trip distance/trip time (this will give us the average mph of the trip). 
+Let's take a look at trip efficiency.  Here I'll define efficiency as trip distance/trip time (this will give us the average mph of the trip). 
 
 ```{r}
 taxi_efficiency <- taxi %>% 
@@ -273,7 +288,6 @@ ggplot(data = taxi_efficiency, aes(x = pickup_hour, y = mph)) +
 ```
 
 Looks like the efficiency peaks at around 4:30am but remains pretty consistent from 7am-7pm.  We see higher efficiency outside of work hours, as expected.
-
 
 ```{r}
 taxi_inefficient <- taxi_efficiency %>% 

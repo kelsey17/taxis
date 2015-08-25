@@ -5,7 +5,7 @@ date: "8/19/2015"
 output: html_document
 ---
 
-Here, let's investigate profit strategies for individual taxi drivers.  In order to do this, I'll first examine the data for our top 10 earners.
+Here, let's investigate profit strategies for individual taxi drivers.   
 
 ```{r setup, message = FALSE, results = 'hide'}
 source('db_connection.r')
@@ -19,10 +19,10 @@ library(rpart.plot)
 library(gridExtra)
 ```
 
-TODO: Set seed somehow so this data is consistent
 ```{r}
 taxi_strat_raw <- query_results("
-  SELECT *
+ SELECT setseed(.5); 
+ SELECT *
  FROM trips
  INNER JOIN fares ON trips.id = fares.trip_id
  WHERE trips.hack_license IN (
@@ -82,7 +82,8 @@ days_of_week <- read.csv("days_of_week - Sheet1 (1).csv")
 taxi_strat <- taxi_strat_raw %>% 
   dplyr::mutate(tip_percentage = tip_amount/fare_amount*100) %>%
   left_join(borough_total_pickups, by = "pickup_borough") %>% 
-  tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), " ") %>%
+  mutate(pickup_change = pickup_datetime) %>% 
+  tidyr::separate(pickup_change, c("pickup_date", "pickup_time"), " ") %>%
   tidyr::separate(pickup_time, c("pickup_hour", "pickup_min", "pickup_sec"), ":") %>% 
   left_join(days_of_week, by = "pickup_date") %>% 
   mutate(pickup_date = ymd(pickup_date)) %>% 
@@ -127,9 +128,56 @@ strat_indiv_trips <- strat_indiv %>%
   summarize(total_revenue = sum(total_revenue), total_trips = sum(total_trips))
 
 ggplot(strat_indiv_trips, aes(x = total_trips, y = total_revenue)) + geom_point()
+fit <- lm(total_revenue ~ total_trips, data = strat_indiv_trips)
+summary(fit)
 ```
 
 This is again a pretty linear relationship.  I'm interested in the outliers, in particular drivers who had fewer trips but more revenue, or fewer hours but more revenue.
+
+Let's compute the total number of hours each cabbie spends in service (not necessarily on the meter).
+
+```{r}
+trip_times <- taxi_strat %>% 
+  group_by(hack_license, pickup_date) %>% 
+  summarize(secs_on_meter = sum(trip_time_in_secs), total_amount = sum(total_amount))
+
+taxi_empty <- taxi_strat %>% 
+  select(hack_license, pickup_date, pickup_datetime, dropoff_datetime) %>% 
+  arrange(hack_license, pickup_date, pickup_datetime) 
+# not using mutate here because my version of dplyr has a bug with mutate and lubridate
+taxi_empty$empty_time <- as.integer(taxi_empty$pickup_datetime - lag(taxi_empty$dropoff_datetime))
+
+taxi_empty <- taxi_empty %>% 
+  mutate(empty_time = ifelse(is.na(empty_time)|empty_time<0|empty_time>3600,0,empty_time)) %>%  
+  group_by(hack_license, pickup_date) %>% 
+  summarize(total_empty_time = sum(empty_time)) %>% 
+  left_join(trip_times, by = c("hack_license" = "hack_license", 
+                               "pickup_date" = "pickup_date")) %>% 
+  mutate(total_hours = (total_empty_time + secs_on_meter)/3600)
+
+ggplot(data = taxi_empty, aes(x = total_hours)) + geom_histogram() + xlim(0,20)
+summary(taxi_empty$total_hours)
+```
+
+So, on any given day, we can see the number of hours worked by a cabbie. The mean workday consists of 7.22 hours (this does not include any meter breaks longer than an hour).
+
+Let's look at efficiency from this point of view.
+```{r}
+taxi_empty_month <- taxi_empty %>% 
+  group_by(hack_license) %>% 
+  summarize(total_empty_time = sum(total_empty_time), secs_on_meter = sum(secs_on_meter),
+            revenue = sum(total_amount), total_hours = sum(total_hours))
+ggplot(data = taxi_empty_month, aes(x = total_hours, y = revenue)) + geom_point()
+fit <- lm(revenue ~ total_hours, data = taxi_empty_month)
+summary(fit)
+```
+
+Interestingly, a higher proportion of working time off the meter doesn't necessarily mean less revenue.  This could be because longer trips (i.e. to/from the airport) could mean more empty time but are high-priced.
+
+```{r}
+ggplot(ml_best, aes(x = (total_empty_time/3600)/total_hours, y = total_revenue)) + geom_point() +
+  geom_smooth()
+```
 
 Shall we try some machine learning, perhaps?
 
@@ -139,38 +187,42 @@ strat_indiv_ml <- strat_indiv %>%
   spread(payment_type, total_trips, fill = 0) %>%
   group_by(hack_license) %>% 
   summarize(mean_pickup_hour = mean(pickup_hour)
-            , total_hours = sum(total_time)/3600
+            , total_meter_hours = sum(total_time)/3600
             , total_distance = sum(total_distance)
             , total_num_passengers = sum(total_num_passengers)
             , total_trips = sum(total_num_trips)
             , CRD = sum(CRD)/total_trips
             , CSH = sum(CSH)/total_trips
             , total_revenue = sum(total_revenue)) %>% 
-  mutate(rev_level = ifelse(total_revenue>10000, "high", 
-                            ifelse(total_revenue<5000, "low", "mid")))
+  mutate(rev_level = ifelse(total_revenue>9135, "high", 
+                            ifelse(total_revenue<6276, "low", "mid"))) %>% 
+  left_join(taxi_empty_month, by = "hack_license")
   
-fit <- rpart(rev_level ~ .-total_revenue -hack_license, data = strat_indiv_ml, method = "class")
+fit <- rpart(rev_level ~ .-total_revenue -hack_license -revenue, data = strat_indiv_ml, method = "class")
 prp(fit)
 ```
 
 This decision tree reveals three paths to high revenue:
-1. Many hours (>68), lots of distance (>1981 miles), many trips (>682)
-2. Many hours (>68), LOTS of distance (>2272 miles)
-3. MANY hours (>151)
+1. Some distance (1218 miles < x < 1819 miles), many hours on the meter (>=132) ---> "meter method"
+2. Lots of distance (>=1819 miles), many hours working (>=204) ---> "hour method"
+3. Lots of distance (>=1819 miles), many trips (>=603) --> "trip method"
 
 This begs the question, which path is the most lucrative?
 
 ```{r}
 ml_best <- strat_indiv_ml %>% 
   filter(rev_level == "high") %>% 
-  mutate(win_method = ifelse(total_hours >= 68 & total_distance >= 1981 & total_trips >= 682, "t_trad", 
-                             ifelse(total_hours >= 68 & total_distance >= 2272, "t_dist",
-                                    ifelse(total_hours >= 151, "t_hrs", "unknown")))) %>% 
+  mutate(win_method = ifelse(total_distance >= 1218 & total_distance < 1819 & 
+                               total_meter_hours >= 132, "t_meter", 
+                        ifelse(total_distance >= 1819 & total_hours >=204, "t_hour",
+                          ifelse(total_distance >= 1819 & total_hours < 204 & total_trips >= 603
+                                 , "t_trip", "unknown")))) %>% 
   filter(win_method!="unknown") 
 
 total_method <- ml_best %>% 
   group_by(win_method) %>% 
   summarize(count = n())
+total_method
 
 total_rev <- ml_best %>% 
   group_by(win_method) %>% 
@@ -180,10 +232,9 @@ total_rev <- ml_best %>%
 total_rev
 ```
 
-So, in our sample of 118 high-performing taxi drivers, it looks like the traditional method produced the most revenue per driver, closely followed by the distance method and the hours method. Let's compare the hours worked with each of these groups, in order to isolate the strategy with the least cost (assuming cost = hours working).
+So, in our sample of 222 high-performing taxi drivers, it looks like the hour method produced the most revenue per driver, closely followed by the meter method and the trip method. Let's compare the hours worked with each of these groups, in order to isolate the strategy with the least cost (assuming cost = hours working).
 
 ```{r, echo = FALSE}
-
 ml_best %>% 
   select(hack_license, total_hours, win_method) %>% 
   ungroup() %>% 
@@ -193,7 +244,9 @@ ggplot(ml_best, aes(x = total_hours, y = total_revenue, color = win_method, grou
   geom_point() + xlab("Hours Worked") + ylab("Total Revenue") + ggtitle("High Performing NYC Cab Drivers, January 2013")
 ```
 
-Let's look at airport pickups: what percentage of cab drivers spend time picking up at the airport?
+This graph is what we'd expect: the trip group spends fewer hours working, the meter group spends more hours working, and the hour group is much larger than the other two, accounting for the greater variance. It doesn't seem that there's one method that gives a particularly great return on investment (time).  
+
+With long trips in mind, look at airport pickups: what percentage of cab drivers spend time picking up at the airport?
 
 ```{r}
 airports <- taxi_strat %>% 

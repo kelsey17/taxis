@@ -5,6 +5,8 @@ date: "August 19, 2015"
 output: html_document
 ---
 
+Now let's analyze the taxi data based on a random sampling of drivers, rather than a random sampling of trips.  This new data set will give us a random 3% of NYC cab drivers (967 drivers) and all of their trip data from January 2013.
+
 ```{r}
 source('db_connection.r')
 library(ggplot2)
@@ -22,6 +24,8 @@ taxi_strat_raw <- query_results("
    SELECT hack_license FROM trips ORDER BY random() LIMIT 967
   )
 ;")
+
+# 967 represents 3% of drivers in the full data set
 
 taxi_strat_raw <- taxi_strat_raw[,unique(colnames(taxi_strat_raw))]
 
@@ -45,6 +49,7 @@ taxi_strat_raw <- taxi_strat_raw %>%
     ifelse(dropoff_longitude> - 73.927 | dropoff_latitude > 40.875, "bronx",
     ifelse(dropoff_longitude < -74.04, "staten_island", "queens")))))
 
+# type casting all variables 
 taxi_strat_raw <- taxi_strat_raw %>% 
   mutate(
     medallion = as.factor(medallion),
@@ -97,10 +102,7 @@ taxi_indiv <- taxi_strat %>%
   ungroup() 
 ```
 
-I'm interested in the revenues/profit strategies of specific cabbies.  Let's take a look at this data, grouped by individual taxi.
-
-Let's look at a few different things, starting with
-the total revenue per cab.
+Let's look at a few different metrics, starting with the total revenue per cab.
 
 ```{r}
 taxi_indiv_rev <- taxi_indiv %>% 
@@ -108,71 +110,58 @@ taxi_indiv_rev <- taxi_indiv %>%
   summarize(total_revenue = sum(total_revenue)) %>% 
   arrange(desc(total_revenue))
 
-ggplot(taxi_indiv_rev, aes(x = total_revenue)) + geom_histogram(binwidth= 500)
+ggplot(taxi_indiv_rev, aes(x = total_revenue)) + geom_histogram(binwidth= 500) +  
+  xlab("Total Revenue") + ylab("Number of Cabbies") + 
+  ggtitle("NYC Cab Driver Revenue, January 2013")
+ 
 ```
 
-How about total number of passengers/trips?
+How about total number of passengers and total number of trips?
 
-```{r}
+```{r, message = FALSE}
 taxi_indiv_pass <- taxi_indiv %>% 
   group_by(hack_license) %>% 
   summarize(num_passengers = sum(total_num_passengers), num_trips = sum(total_trips))
 
-ggplot(taxi_indiv_pass) + geom_histogram(aes(num_passengers)) + xlim(0,4000) # will need to change these limits for full data set
-ggplot(taxi_indiv_pass) + geom_histogram(aes(num_trips)) + xlim(0,1000)
+ggplot(taxi_indiv_pass) + geom_histogram(aes(num_passengers)) + xlim(0,4000) +
+  xlab("Total Passengers") + ylab("Number of Cabbies") + 
+  ggtitle("Total Passengers Per Cabbie,January 2013") # will need to change these limits for full data set
+ggplot(taxi_indiv_pass) + geom_histogram(aes(num_trips)) + xlim(0,1000) +
+  xlab("Total Trips") + ylab("Number of Cabbies") + 
+  ggtitle("Total Trips Per Cabbie, January 2013")
 ```
 
-Total number of different cars driven by cabbie: THIS IS WRONG
-TODO: Figure out why some cabbies apparently drive 132 different cars in a month.
-```{r}
-taxi_indiv_cars <- taxi_indiv %>% 
-  group_by(hack_license) %>% 
-  summarize(total_cars = sum(num_different_cars)) %>% 
-  arrange(desc(total_cars))
-```
-
-Cabbies who are tipped the best (relative to their revenue):
+What's the average overall tip rate for a cabbie?  Note that this data set only includes trips paid for using a card.  This data set lacks tip information for trips paid in cash.  We can see that most cabbies are tipped on average 13-16%.
 
 ```{r}
-taxi_indiv_tips <- taxi_indiv %>% 
+taxi_indiv_tips <- taxi_indiv %>%
+  dplyr::filter(payment_type == "CRD") %>% 
   group_by(hack_license) %>% 
   summarize(total_revenue = sum(total_revenue), total_tips = sum(total_tips)) %>% 
   mutate(tip_rate = total_tips/total_revenue)
 
-ggplot(taxi_indiv_tips, aes(tip_rate)) + geom_histogram(binwidth = .005) 
+ggplot(taxi_indiv_tips, aes(tip_rate)) + geom_histogram(binwidth = .005) +
+  xlab("Tip Rate") + ylab("Number of Cabbies") + 
+  ggtitle("Tip Rate For NYC Cabbies, Janurary 2013")
 ```
 
 Number of days worked in the month:
+
 ```{r}
 taxi_indiv_days <- taxi_indiv %>% 
   group_by(hack_license) %>% 
   summarize(total_days_worked = n_distinct(pickup_date)) %>% 
   arrange(desc(total_days_worked))
 
-ggplot(taxi_indiv_days, aes(total_days_worked)) + geom_histogram()
+ggplot(taxi_indiv_days, aes(total_days_worked)) + geom_histogram() + 
+  xlab("Total Days Worked") + ylab("Number of Cabbies") +
+  ggtitle("Number of Days Worked By NYC Cabbies in January 2013")
 ```
 
 Wow. Looks like many of our cabbies worked every single day of January.  That's dedication!
 
-Maybe we can figure out what shift the cabbies work by labeling their pickup times with a broader category tag.  This assumes a shift change at 5pm (assumptions based on IQuantNY analysis).
+Are there certain drivers that have only cash/only card payments? Maybe some drive cars without card capabilities.
 
-```{r}
-taxi_indiv_shifts <- taxi_indiv %>% 
-  mutate(tod = ifelse(pickup_hour>5 & pickup_hour<17, "morning_afternoon", "evening_night")) %>% 
-  group_by(hack_license, tod) %>% 
-  summarize(count = n()) %>% 
-  spread(tod, count, fill = 0) %>% 
-  mutate(morning_per_evening = morning_afternoon/evening_night)
-
-ggplot(taxi_indiv_shifts) + geom_histogram(aes(evening_night), binwidth = 1)
-ggplot(taxi_indiv_shifts) + geom_histogram(aes(morning_afternoon), binwidth = 1)
-ggplot(taxi_indiv_shifts) + geom_histogram(aes(morning_per_evening), binwidth = .1) +
-  xlim(0,5)
-```
-
-Are there certain drivers that have only cash/only card payments? Maybe drive cars without card capabilities?
-
-Most cabbies are a little less than 50% cash.  There are 3 who have mroe than 10 trips and all are cash.  None have 0% cash.
 ```{r}
 taxi_indiv_payment <- taxi_indiv %>% 
   group_by(hack_license, payment_type) %>% 
@@ -183,23 +172,47 @@ taxi_indiv_payment <- taxi_indiv %>%
   arrange(desc(CSH)) %>% 
   filter(total>=10)
 
-ggplot(taxi_indiv_payment) + geom_histogram(aes(CSH), binwidth = .05)
+ggplot(data = taxi_indiv_payment, aes (x = CSH)) + geom_histogram(binwidth = .05)
+
+# to find the outlier
+taxi_indiv_payment %>% 
+  filter(CSH >.9)
+
+# examining the outlier further
+outlier_trips <- taxi_strat %>% 
+  filter(hack_license == "9528862888CE780606F9076DD218F7E1")
+
+ggplot(data = outlier_trips, aes(x = total_amount)) + geom_histogram()
+
+ggplot(data = outlier_trips, aes(x = pickup_longitude, y = pickup_latitude)) + 
+  geom_point(color = "blue", alpha = 1/5) + xlim(-74,-73.96) + ylim(40.75,40.8) +
+  geom_point(data = outlier_trips, aes(x = dropoff_longitude, y = dropoff_latitude),
+             color = "red", alpha = 1/10)
 ```
 
-Let's look at cabbies' driving schedules.  We can use NMF to find relationships between different pickup hours of trips.
+Most cabbies are paid in cash for a little less than 50% of their trips. There's one outlier in particular who drove 221 trips in January and only received a card payment in 2 of those trips. After some investigation, it doesn't look like this outlier has behavior much different from other cabs (total amounts of fares, pickup/dropoff locations).  Perhaps he happens to driver cars with broken card machines.  I'm open to ideas on this!
+
+Let's look at cabbies' driving schedules.  We can use NMF (nonlinear matrix factorization) to find relationships between different pickup hours of trips.  In order to tidy our data set, we modify taxi_indiv to be a matrix with individual drivers as rows and pickup hours as columns.  A "1" in any given column corresponds to 6 or more pickups by that driver in that hour, whie a "0" indicates fewer than 6 pickups at that hour in January 2013. 
 ```{r}
 taxi_indiv_nmf <- taxi_indiv %>% 
   group_by(hack_license, pickup_hour) %>% 
   summarize(count = n()) %>% 
   mutate(count = ifelse(count>5,1,0)) %>% 
   dplyr::filter(!is.na(count), !is.na(hack_license), !is.na(pickup_hour)) %>% 
-  spread(pickup_hour, count, fill = 0) %>% 
-  select(-hack_license)
-
-taxi_indiv_nmf <- as.matrix(taxi_indiv_nmf)
-taxi_indiv_nmf <- na.omit(taxi_indiv_nmf)
-
-nmf_taxi <- nmf(as.matrix(taxi_indiv_nmf), rank = 4, nrun = 10)
+  spread(pickup_hour, count, fill = 0) %>%
+  mutate(total = rowSums(taxi_indiv_nmf[,2:25])) %>% 
+  dplyr::filter(total>0) %>% 
+  dplyr::select(-hack_license,-total) 
+ 
+nmf_taxi <- nmf(as.matrix(taxi_indiv_nmf), rank = 2)
 ```
 
+As expected, we achieve the best-fitting NMF model using a rank of 2.  This is not surprising since most cabbies work one of two shifts during the day.  We can see in the following coefficient map that there are two distinct shifts, one from 5am-4:30pm (basis 1) and another from 4:30pm to 5am (basis 2). The column marked 16 (4pm) is roughly split half and half between the two shifts, indicating that most shift changes occur between 4pm and 5pm (I estimate 4:30pm). 
+```{r, echo = FALSE}
+coefmap(nmf_taxi)
+```
 
+In this basis map, the rows are the cabbies and the columns are our two shift groups.  We can see that most cabbies fall distinctly into one of the two groups, meaning they primarily work either the morning or night shift.  However, there is also a group that seems pretty split, implying that several cabbies in our sample work a mix of morning and night shifts.
+```{r, echo = FALSE}
+basismap(nmf_taxi)
+```
