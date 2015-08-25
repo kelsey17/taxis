@@ -85,7 +85,7 @@ borough_total_pickups <- taxi_raw %>%
   summarize(borough_pickups = n())
 ```
 
-Let's perform some EDA.  How many trips per day of week?
+Let's perform some EDA. How many trips per day of week?
 
 ```{r, echo = FALSE, message = FALSE}
 days_of_week <- read.csv("days_of_week - Sheet1 (1).csv")
@@ -229,38 +229,26 @@ By zooming in on this graph and identifying landmarks based on longitude/latitud
 * Brooklyn Driving School
 * Various auto shops
 
-Now let's try some machine learning on this data set.
+Let's look at tipping.  This data set only contains tip data for rides paid with cards, so we'll limit our data set to those trips only.
 
 ```{r}
+tip_analysis <- taxi %>% 
+  filter(payment_type=="CRD") %>% 
+  filter(tip_percentage<=100)
 
-tip_percentages <- taxi %>%
-  select(rate_code
-         , passenger_count
-         , trip_time_in_secs
-         , trip_distance
-         , payment_type
-         , fare_amount
-         , surcharge
-         , mta_tax
-         , tolls_amount
-         , total_amount
-         , pickup_borough
-         , tip_percentage
-         )
-tip_percentages <- na.omit(tip_percentages)
+ggplot(data = tip_analysis, aes(x = fare_amount, y = tip_percentage)) + 
+  geom_point(alpha = 1/10) + xlim(0,100)
 
-smp_size <- floor(0.75 * nrow(tip_percentages))
-set.seed(123)
-train_ind <- sample(seq_len(nrow(tip_percentages)), size = smp_size)
-
-train <- tip_percentages[train_ind, ]
-test <- tip_percentages[-train_ind, ]
-
-rfit <- rpart(tip_percentage ~ . , data=train) 
-prp(rfit)
+ggplot(data = tip_analysis, aes(x = tip_percentage)) + geom_histogram() + xlim(0,50)
 ```
 
-Maybe a correlogram can shed some more light on the relationships between our variables.
+The first graph yields 2 main conclusions: 
+1. Customers are using the buttons on the card payment screen for 20, 25, and 30% tips (these are the horizontal lines in the graph).
+2. Customers pay a smaller percentage when the rate is high (i.e. If I'm already spending $50 on a taxi, I don't want to spend another $15 on the tip).  
+
+We can also see the vertical line at the $52 fare (many different tips for airport trips).
+
+Let's run a correlogram to see if there are any surprising relationships between our variables.
 
 ```{r}
 taxi_num <- taxi %>% 

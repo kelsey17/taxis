@@ -272,7 +272,7 @@ airport_indiv %>%
 
 # About 10% of cabbies did not pick up anyone from an airport in January.
 
-ggplot(data = airports_indiv, aes(x = JFK_percent, y = total_revenue)) + geom_point()
+ggplot(data = airport_indiv, aes(x = JFK_percent, y = total_revenue)) + geom_point()
 
 # what about airport pickups by date?
 
