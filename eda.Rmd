@@ -131,22 +131,6 @@ taxi_days <- taxi %>%
   group_by(pickup_date, weekday) %>% 
   summarize(revenue = sum(total_amount)) %>% 
   arrange(desc(revenue))
-taxi_days_Su <- taxi_days %>% 
-  dplyr::filter(weekday == "Sunday")
-
-taxi_days %>%
-  ungroup %>% 
-  summarize(mean_revenue = mean(revenue))
-
-t.test(revenue ~ weekday, data = taxi_days)
-t.test(taxi_days_Su$revenue, mu=450292.7)
-t.test(taxi_days_Th$revenue, taxi_days_F$revenue)
-
-qqnorm(taxi_days_S$revenue)                     ### output not shown
-qqline(taxi_days_S$revenue)                     ### output not shown
-plot(density(taxi_days_S$revenue))              ### output not shown
-shapiro.test(taxi_days_Su$revenue)
-#one sample t test: compare each mean to the total mean?
 
 week_levels <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
@@ -154,7 +138,26 @@ ggplot(taxi_days, aes(x = factor(weekday,week_levels), y = revenue)) + geom_boxp
   xlab("Day of Week") + ylab("Total Revenue ($)") + ggtitle("Revenue Per Day of Week")
 ```
 
-Checking out the toll situation in the city.  High tolls for Staten Island!
+It appears that there are, in fact, differences in revenue throughout the week.  Keep in mind that our sample contains just four of each day (totaling 1 month).  I'm particularly interested in Monday and Friday, which seem to be the lowest and highest revenue days, respecively. In order to estimate significance, we can perform a t-test between Monday and Friday and between each of these days and Saturday, which looks to be about the middle.
+
+
+```{r}
+# new data frame for each day of the week we're analyzing
+taxi_days_M <- taxi_days %>% 
+  dplyr::filter(weekday == "Monday")
+taxi_days_F <- taxi_days %>% 
+  dplyr::filter(weekday == "Friday")
+taxi_days_S <- taxi_days %>% 
+  dplyr::filter(weekday == "Saturday")
+
+t.test(taxi_days_M$revenue, taxi_days_F$revenue)
+t.test(taxi_days_M$revenue, taxi_days_S$revenue)
+t.test(taxi_days_F$revenue, taxi_days_S$revenue)
+```
+
+Because the p-value of the t-test for Friday/Saturday is >,05, we can conclude that the revenue on those two days is not statistically significant.  However, both the Monday/Friday and Monday/Saturday tests are significant, indicating that the Monday revenue is not the same as the Friday and Saturday revenues.  
+
+Now I'll explore the toll situation in the city.  High tolls for Staten Island!
 
 ```{r}
 taxi %>% 
