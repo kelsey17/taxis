@@ -5,4 +5,4 @@ My analysis is composed of three files:
 * individual_taxis.Rmd (analysis of individual cab drivers, or "cabbies")  
 * profit_strategies.Rmd (analysis of cabbie revenue and profit strategies)   
 
-I learned all of these techniques during my summer at [Cricket's Circle](cricketscircle.com)- special thanks to Bryce and all who helped me along the way.
+I learned all of these techniques during my summer at [Cricket's Circle](cricketscircle.com)- special thanks to Bryce McDonnell and all who helped me along the way.

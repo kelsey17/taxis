@@ -17,7 +17,7 @@ My analysis is composed of three files:
 * eda.Rmd (exploratory data analysis)  
 * individual_taxis.Rmd (analysis of individual cab drivers, or "cabbies")  
 * profit_strategies.Rmd (analysis of cabbie revenue and profit strategies)    
-I learned all of these techniques during my summer at [Cricket's Circle](cricketscircle.com)- special thanks to Bryce and all who helped me along the way.
+I learned all of these techniques during my summer at [Cricket's Circle](cricketscircle.com)- special thanks to Bryce McDonnell and all who helped me along the way.
 
 ***
   
@@ -132,8 +132,8 @@ ggplot(aes(x = factor(weekday, week_levels)), data = taxi) + geom_histogram() +
   xlab("Day of Week") + ylab("Number of Trips") + ggtitle("Trips Per Day")
 ```
 
-How many trips per date?  We can see here the lull on January 21st (MLK Day).  There's
-also a dip on Janurary 6th (Sunday), which is the Epiphany, but I'm not convinced that's why we see less taxi traffic.  Also puzzling is the peak on January 26th (Saturday).
+How many trips per date? We can see here the lull on January 21st (MLK Day). There's
+also a dip on Janurary 6th (Sunday), which is the Epiphany, but I'm not convinced that's why we see less taxi traffic.  Also puzzling is the peak on January 26th (Saturday). Open to ideas about these!
 
 ```{r, message = FALSE}
 jan_taxi <- taxi %>% 
