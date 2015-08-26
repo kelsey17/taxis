@@ -3,3 +3,4 @@
 .RData
 
 db_connection.r
+*.pdf

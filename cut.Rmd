@@ -41,3 +41,25 @@ test <- tip_percentages[-train_ind, ]
 rfit <- rpart(tip_percentage ~ . , data=train) 
 prp(rfit)
 ```
+
+# to find the outlier
+taxi_indiv_payment %>% 
+  dplyr::filter(CSH >.9)
+
+# examining the outlier further
+outlier_trips <- taxi_strat %>% 
+  dplyr::filter(hack_license == "9528862888CE780606F9076DD218F7E1")
+
+ggplot(data = outlier_trips, aes(x = total_amount)) + geom_histogram() + 
+  xlab("Fare Amount") + ylab("Number of Trips") + 
+  ggtitle("Outlier's Trip Fares")
+
+ggplot(data = outlier_trips, aes(x = pickup_longitude, y = pickup_latitude)) + 
+  geom_point(color = "blue", alpha = 1/5) + xlim(-74,-73.96) + ylim(40.75,40.8) +
+  geom_point(data = outlier_trips, aes(x = dropoff_longitude, y = dropoff_latitude),
+             color = "red", alpha = 1/10) +
+  xlab("Longitude") + ylab("Latitude") + ggtitle("Outlier's Pickups & Dropoffs")
+
+
+![](/Users/angelaschroeder/Desktop/Screen Shot 2015-08-26 at 11.23.46 AM.png) 
+

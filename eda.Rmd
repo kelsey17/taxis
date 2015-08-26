@@ -1,22 +1,41 @@
 ---
-title: "eda"
-author: "Kelsey Schroeder"
-date: "August 12, 2015"
-output: html_document
+output:
+  pdf_document: default
+  html_document:
+    pandoc_args:
+    - +RTS
+    - -K64m
+    - -RTS
 ---
-```{r, echo=FALSE, message = FALSE}
+
+# NYC Taxi Analysis
+### Kelsey Schroeder
+#### Summer 2015
+
+Welcome to my analysis of NYC Taxi data! I obtained the data from [Chris Whong](http://chriswhong.com/open-data/foil_nyc_taxi/) who was able to access it through a FOIL (Freedom of Information Law) request. The data set contains information on every trip taken in a NYC yellow cab in January 2013 (about 14 million observations).  
+My analysis is composed of three files:   
+* eda.Rmd (exploratory data analysis)  
+* individual_taxis.Rmd (analysis of individual cab drivers, or "cabbies")  
+* profit_strategies.Rmd (analysis of cabbie revenue and profit strategies)    
+I learned all of these techniques during my summer at [Cricket's Circle](cricketscircle.com)- special thanks to Bryce and all who helped me along the way.
+
+***
+  
+This file contains the exploratory data analysis of the data set. Essentially, this is a record of my initial exploration of this data. We'll need some libraries to facilitate this exploration.
+```{r, message = FALSE}
 source('db_connection.r')
 library(ggplot2)
 library(tidyr)
 library(dplyr)
 library(lubridate)
-library('rpart') # NOTE: you need to manually install rpart.plot as a separate package
+library(rpart)
 library(rpart.plot)
 library(corrgram)
 library(prob)
 ```
 
-First, I'll pull the data set from my database.
+First, I'll pull the data set from my database. My laptop can only handle a million observations at a time, so I'll limit my data set to 1,000,000 taxi trip records.
+
 ```{r}
 taxi_raw <- query_results("
   SELECT *
@@ -30,7 +49,7 @@ taxi_raw <- query_results("
 taxi_raw <- taxi_raw[,unique(colnames(taxi_raw))]
 ```
 
-In order to better analyze the data, let's divide the longitude/latitude pairings into boroughs (this is just an estimation, boundaries aren't perfect):
+In order to better analyze the data, let's divide the longitude/latitude pairings into boroughs (this is just an estimation-- the boundaries are far from perfect):
 
 ```{r}
 taxi_raw <- taxi_raw %>% 
@@ -53,6 +72,7 @@ taxi_raw <- taxi_raw %>%
     ifelse(dropoff_longitude> - 73.927 | dropoff_latitude > 40.875, "bronx",
     ifelse(dropoff_longitude < -74.04, "staten_island", "queens")))))
 
+# type-casting my variables
 taxi_raw <- taxi_raw %>% 
   mutate(
     medallion = as.factor(medallion),
@@ -76,18 +96,19 @@ taxi_raw <- taxi_raw %>%
   )
 ```
 
-How many pickups per borough?
+Hmm... how many pickups per borough?
 
 ```{r}
 borough_total_pickups <- taxi_raw %>% 
   dplyr::filter(!is.na(pickup_borough) & !is.na(dropoff_borough)) %>% 
   group_by(pickup_borough) %>% 
   summarize(borough_pickups = n())
+borough_total_pickups
 ```
 
 Let's perform some EDA. How many trips per day of week?
 
-```{r, echo = FALSE, message = FALSE}
+```{r, warning = FALSE}
 days_of_week <- read.csv("days_of_week - Sheet1 (1).csv")
 
 taxi <- taxi_raw %>% 
@@ -107,24 +128,24 @@ taxi %>%
 
 week_levels <- c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
 
-ggplot(aes(x = factor(weekday, week_levels)), data = taxi) + geom_histogram() + xlab("Day of Week") +
-  ylab("Number of Trips") + ggtitle("Trips Per Day")
+ggplot(aes(x = factor(weekday, week_levels)), data = taxi) + geom_histogram() +
+  xlab("Day of Week") + ylab("Number of Trips") + ggtitle("Trips Per Day")
 ```
 
 How many trips per date?  We can see here the lull on January 21st (MLK Day).  There's
 also a dip on Janurary 6th (Sunday), which is the Epiphany, but I'm not convinced that's why we see less taxi traffic.  Also puzzling is the peak on January 26th (Saturday).
 
-```{r, echo = F, message = FALSE}
+```{r, message = FALSE}
 jan_taxi <- taxi %>% 
   group_by(pickup_date) %>% 
   summarize(trips = n())
 
-ggplot(jan_taxi, aes(x = pickup_date, y = trips, group = 1)) + geom_line(stat= 'identity') +
-  ylab("Number of Trips") + xlab("Pickup Date") + ggtitle("Number of Daily Trips in January 2013")
+ggplot(jan_taxi, aes(x = pickup_date, y = trips, group = 1)) + 
+  geom_line(stat= 'identity') + ylab("Number of Trips") + 
+  xlab("Pickup Date") + ggtitle("Number of Daily Trips in January 2013")
 ```
 
 Total revenue each day of the week?
-TODO: See if this is statistically significant
 
 ```{r, echo = FALSE, message = FALSE}
 taxi_days <- taxi %>% 
@@ -138,8 +159,7 @@ ggplot(taxi_days, aes(x = factor(weekday,week_levels), y = revenue)) + geom_boxp
   xlab("Day of Week") + ylab("Total Revenue ($)") + ggtitle("Revenue Per Day of Week")
 ```
 
-It appears that there are, in fact, differences in revenue throughout the week.  Keep in mind that our sample contains just four of each day (totaling 1 month).  I'm particularly interested in Monday and Friday, which seem to be the lowest and highest revenue days, respecively. In order to estimate significance, we can perform a t-test between Monday and Friday and between each of these days and Saturday, which looks to be about the middle.
-
+It appears that there are, in fact, differences in revenue throughout the week.  Keep in mind that our sample contains just four observations of each day (totaling 1 month).  I'm particularly interested in Monday and Friday, which seem to be the lowest and highest revenue days, respecively. In order to estimate significance, we can perform a t-test between Monday and Friday and between each of these days and Saturday, which looks to be about the middle.
 
 ```{r}
 # new data frame for each day of the week we're analyzing
@@ -155,9 +175,9 @@ t.test(taxi_days_M$revenue, taxi_days_S$revenue)
 t.test(taxi_days_F$revenue, taxi_days_S$revenue)
 ```
 
-Because the p-value of the t-test for Friday/Saturday is >,05, we can conclude that the revenue on those two days is not statistically significant.  However, both the Monday/Friday and Monday/Saturday tests are significant, indicating that the Monday revenue is not the same as the Friday and Saturday revenues.  
+Because the p-value of the t-test for Friday/Saturday is >.05, we can conclude that the revenue on those two days is not statistically significant.  However, both the Monday/Friday and Monday/Saturday tests are significant, indicating that the Monday revenue is not the same as the Friday and Saturday revenues.  
 
-Now I'll explore the toll situation in the city.  High tolls for Staten Island!
+Now I'll explore the toll situation in the city.  Looks like high tolls for Staten Island!
 
 ```{r}
 taxi %>% 
@@ -171,7 +191,7 @@ taxi %>%
 
 How about trip length?
 
-```{r, echo = FALSE, message = FALSE}
+```{r, warning = FALSE}
 taxi_length <- taxi %>% 
   select(trip_distance, trip_time_in_secs) %>% 
   dplyr::filter(trip_distance>0) 
@@ -180,7 +200,8 @@ taxi_length$trip_distance <- round(taxi_length$trip_distance)
 taxi_length$trip_time_in_secs <- round(taxi_length$trip_time_in_secs, digits = -1)
 
 ggplot(taxi_length, aes(x=trip_distance, y= trip_time_in_secs)) +
-    geom_point(shape=19, alpha=1/50) + xlim(0,30)
+  geom_point(shape=19, alpha=1/50) + xlim(0,30) + xlab("Trip Distance") +
+  ylab("Trip Time In Seconds") + ggtitle("Trip Time vs. Distance")
 
 summary(taxi_length) 
 ```
@@ -189,37 +210,47 @@ Looks like the vast majority of trips are within 25 miles and 50 minutes.  Mean 
 
 Can we find any trends with trips to airports? Perhaps there's a flat rate fare.  Here's a histogram of fare amounts (not counting surcharges, tip, tolls, etc.).
 
-```{r, echo = FALSE}
-ggplot(taxi, aes(x = fare_amount)) + geom_histogram(binwidth = 1) + xlim(0,57)
+```{r, message = FALSE}
+ggplot(taxi, aes(x = fare_amount)) + geom_histogram(binwidth = 1) + xlim(0,57) + 
+  xlab("Fare Amount") + ylab("Number of Trips") + ggtitle("Trip Fares")
 ```
 
 Notice the peak at $52.  Perhaps this is a flat rate?
 
-```{r}
+```{r,warning = FALSE}
 taxi52 <- taxi %>% 
   dplyr::filter(fare_amount == 52)
 
-ggplot(taxi52, aes(x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/10) + 
-  xlim(-74.2,-73.6) + ylim(40.5,41)
+ggplot(taxi52, aes(x = dropoff_longitude, y = dropoff_latitude)) + 
+  geom_point(alpha = 1/10) + xlim(-74.2,-73.6) + ylim(40.5,41) + 
+  xlab("Dropoff Longitude") + ylab("Dropoff Latitude") +
+  ggtitle("$52 Fare Dropoff Locations")
 ```
 
 Here we see two clusters.  Let's examine more closely.
 
-```{r}
+```{r,warning = FALSE}
 # Checking out the cluster to the right
-ggplot(taxi52, aes(x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/10) + 
-  xlim(-74.05,-73.75)+ ylim(40.5,41)
+ggplot(taxi52, aes(x = pickup_longitude, y = pickup_latitude)) + 
+  geom_point(alpha = 1/10) + xlim(-73.8,-73.77)+ ylim(40.625,40.65) + 
+  xlab("Dropoff Longitude") + ylab("Dropoff Latitude") +
+  ggtitle("Right Cluster of $52 Dropoff Locations")
 ```
 
 And would you look at that!  The cluster to the right is at approximately -73.78 longitude and 40.645 latitude, landing us right on top of JFK airport.  If we look at the pickup data for the other point in the dropoff graph, we find that these customers were picked up at the airport and brough to various places in NYC.  The internet confirms that this ride is a flat rate either way.
 
 What if we look at general pickup/dropoff locations?  Will we find any especially popular spots other than the airport?
 
-```{r}
-ggplot(taxi, aes( x = pickup_longitude, y = pickup_latitude)) + geom_point(alpha = 1/500) + 
-  xlim(-74.01,-73.85) + ylim(40.7,40.85) + theme_bw() # having trouble setting this alpha to the correct value. want to be able to pick out specific long/lat points. Cool map of Manhattan for now!
+```{r,warning = FALSE}
+ggplot(taxi, aes( x = pickup_longitude, y = pickup_latitude)) + 
+  geom_point(alpha = 1/500) + xlim(-74.01,-73.85) + ylim(40.7,40.85) + 
+  theme_bw() + xlab("Pickup Longitude") + ylab("Pickup Latitude") + 
+  ggtitle("Pickup Locations")
 
-ggplot(taxi, aes( x = dropoff_longitude, y = dropoff_latitude)) + geom_point(alpha = 1/100) + xlim(-74.4,-73.4) + ylim(40.5,41) + theme_bw()
+ggplot(taxi, aes( x = dropoff_longitude, y = dropoff_latitude)) + 
+  geom_point(alpha = 1/500) + xlim(-74.01,-73.85) + ylim(40.7,40.85) + 
+  theme_bw() + xlab("Dropoff Longitude") + ylab("Dropoff Latitude") +
+  ggtitle("Dropoff Locations")
 ```
 
 By zooming in on this graph and identifying landmarks based on longitude/latitude data, I was able to identify the following as popular pick up and drop off locations:
@@ -234,26 +265,29 @@ By zooming in on this graph and identifying landmarks based on longitude/latitud
 
 Let's look at tipping.  This data set only contains tip data for rides paid with cards, so we'll limit our data set to those trips only.
 
-```{r}
+```{r,warning = FALSE}
 tip_analysis <- taxi %>% 
-  filter(payment_type=="CRD") %>% 
-  filter(tip_percentage<=100)
+  dplyr::filter(payment_type=="CRD") %>% 
+  dplyr::filter(tip_percentage<=100)
+
+ggplot(data = tip_analysis, aes(x = tip_percentage)) +
+  geom_histogram(binwidth = .5) + xlim(0,50) + xlab("Tip Percentage") + 
+  ylab("Number of Trips") + ggtitle("Tip Percentages")
 
 ggplot(data = tip_analysis, aes(x = fare_amount, y = tip_percentage)) + 
-  geom_point(alpha = 1/10) + xlim(0,100)
-
-ggplot(data = tip_analysis, aes(x = tip_percentage)) + geom_histogram() + xlim(0,50)
+  geom_point(alpha = 1/10) + xlim(0,100) + xlab("Fare Amount") + 
+  ylab("Tip Percentage") + ggtitle("Fare Amount vs. Tip Percentage")
 ```
 
-The first graph yields 2 main conclusions: 
-1. Customers are using the buttons on the card payment screen for 20, 25, and 30% tips (these are the horizontal lines in the graph).
-2. Customers pay a smaller percentage when the rate is high (i.e. If I'm already spending $50 on a taxi, I don't want to spend another $15 on the tip).  
+The bottom graph yields 2 main conclusions:  
+1. Customers are using the buttons on the card payment screen for 20, 25, and 30% tips (these are the horizontal lines in the graph).  
+2. Customers pay a smaller percentage when the rate is high (i.e. If I'm already spending $50 on a taxi, I don't want to spend another $15 on the tip).    
 
 We can also see the vertical line at the $52 fare (many different tips for airport trips).
 
 Let's run a correlogram to see if there are any surprising relationships between our variables.
 
-```{r}
+```{r,message = FALSE}
 taxi_num <- taxi %>% 
   dplyr::mutate(tip_percentage = tip_amount/fare_amount*100) %>% 
   select(vendor_id, rate_code, passenger_count, trip_time_in_secs, trip_distance, 
@@ -261,39 +295,42 @@ taxi_num <- taxi %>%
          fare_amount, surcharge, mta_tax, tip_amount, tolls_amount, total_amount,
          tip_percentage)
 
-corrgram(taxi_num, order = TRUE, upper.panel = panel.pie)
+corrgram(taxi_num, order = TRUE, upper.panel = panel.pie, main = "Trip Correlations")
 ```
 
-Nothing too interesting here... the fare, trip time, trip distance, tip amount total amount, etc. are all positively correlated.  The pickup longitude and latitude seem to only affect each other, which makes sense since in NYC longitudes are negative while latitudes are positive.  Correlograms have been helpful in analyses of other data sets, but here this method just illuminates the lack of surprising correlations in our data.
+Nothing too interesting here... the fare, trip time, trip distance, tip amount total amount, etc. are all positively correlated.  The pickup longitude and latitude have an inverse relationship, which makes sense since in NYC longitudes are negative while latitudes are positive.  Correlograms have been helpful in analyses of other data sets, but here this method just illuminates the lack of surprising correlations in our data.
 
 Let's take a look at trip efficiency.  Here I'll define efficiency as trip distance/trip time (this will give us the average mph of the trip). 
 
-```{r}
+```{r,warning= FALSE}
 taxi_efficiency <- taxi %>% 
   dplyr::filter(trip_distance>0, trip_time_in_secs>0) %>% 
   mutate(mph = trip_distance/(trip_time_in_secs/3600)) %>% 
   arrange(mph)
+head(taxi_efficiency)
 
-ggplot(data = taxi_efficiency, aes(x = pickup_hour, y = mph)) + 
-  geom_point(alpha = 1/510) + ylim(0,30) + geom_smooth(se = F)
+ggplot(data = taxi_efficiency, aes(x = pickup_hour, y = mph)) + geom_point(alpha = 1/510) +
+  ylim(0,30) + geom_smooth(se = F) + xlab("Pickup Hour") + ylab("Trip Efficiency (mph)") +
+  ggtitle("Trip Efficiency Throughout Day")
 ```
 
-Looks like the efficiency peaks at around 4:30am but remains pretty consistent from 7am-7pm.  We see higher efficiency outside of work hours, as expected.
+Looks like the efficiency peaks at around 4:30am but remains pretty consistent from 7am-7pm. We see higher efficiency outside of work hours, as expected.
 
-```{r}
+I did the following to see if I could identify any patterns in the locations of inefficient trips. Pickups are in blue and dropoffs are in red. Looks like they can happen anywhere!
+```{r,warning = FALSE}
 taxi_inefficient <- taxi_efficiency %>% 
   dplyr::filter(mph< 2, mph >.01, pickup_longitude!=0, pickup_latitude!=0)
 
 ggplot(data = taxi_inefficient) + 
   geom_point(aes(y = pickup_latitude, x = pickup_longitude),color = "blue", alpha = 1/25) + 
   xlim(-74.02,-73.94) + ylim(40.7,40.8) + 
-  geom_point(aes(x = dropoff_longitude, y = dropoff_latitude), color = "red", alpha = 1/25)
-
+  geom_point(aes(x = dropoff_longitude, y = dropoff_latitude), color = "red", alpha = 1/25) +
+  xlab("Longitude") + ylab("Latitude") + ggtitle("Inefficient Pickups and Dropoffs")
 ```
 
 Perhaps we can use machine learning to predict the length of a trip.
 
-```{r}
+```{r, warning = FALSE}
 efficient_ml <- taxi_efficiency %>% 
   mutate(trip_time_in_mins = trip_time_in_secs/60) %>% 
   dplyr::filter(dropoff_latitude<41, pickup_latitude<41) %>% 
@@ -305,5 +342,7 @@ fit <- rpart(trip_time_in_mins ~ ., data = efficient_ml, method = "anova")
 prp(fit)
 ```
 
+This decision tree illustrates some factors that can affect trip length. Here's a nicer version:
 
+![](/Users/angelaschroeder/Desktop/Screen Shot 2015-08-26 at 11.23.46 AM.png) 
 

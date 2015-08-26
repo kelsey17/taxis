@@ -1,13 +1,14 @@
 ---
-title: "Untitled"
-author: "Kelsey Schroeder"
-date: "August 19, 2015"
+title: "Individual Taxis"
 output: html_document
 ---
+### NYC Taxi Analysis
+#### Kelsey Schroeder
+#### Summer 2015
 
-Now let's analyze the taxi data based on a random sampling of drivers, rather than a random sampling of trips.  This new data set will give us a random 3% of NYC cab drivers (967 drivers) and all of their trip data from January 2013.
+Here I'll analyze the taxi data based on a random sampling of drivers, rather than a random sampling of trips.  This new data set will give us a random 3% of NYC cab drivers (967 drivers) and all of their trip data from January 2013. First, I need to create and tidy the data set.  
 
-```{r}
+```{r, message = FALSE, warning = FALSE}
 source('db_connection.r')
 library(ggplot2)
 library(tidyr)
@@ -80,7 +81,8 @@ days_of_week <- read.csv("days_of_week - Sheet1 (1).csv")
 taxi_strat <- taxi_strat_raw %>% 
   dplyr::mutate(tip_percentage = tip_amount/fare_amount*100) %>%
   left_join(borough_total_pickups, by = "pickup_borough") %>% 
-  tidyr::separate(pickup_datetime, c("pickup_date", "pickup_time"), " ") %>%
+  mutate(pickup_cut = pickup_datetime) %>% 
+  tidyr::separate(pickup_cut, c("pickup_date", "pickup_time"), " ") %>%
   tidyr::separate(pickup_time, c("pickup_hour", "pickup_min", "pickup_sec"), ":") %>% 
   left_join(days_of_week, by = "pickup_date") %>% 
   mutate(pickup_date = ymd(pickup_date)) %>% 
@@ -112,7 +114,7 @@ taxi_indiv_rev <- taxi_indiv %>%
 
 ggplot(taxi_indiv_rev, aes(x = total_revenue)) + geom_histogram(binwidth= 500) +  
   xlab("Total Revenue") + ylab("Number of Cabbies") + 
-  ggtitle("NYC Cab Driver Revenue, January 2013")
+  ggtitle("Cabbie Revenue, January 2013")
  
 ```
 
@@ -125,7 +127,8 @@ taxi_indiv_pass <- taxi_indiv %>%
 
 ggplot(taxi_indiv_pass) + geom_histogram(aes(num_passengers)) + xlim(0,4000) +
   xlab("Total Passengers") + ylab("Number of Cabbies") + 
-  ggtitle("Total Passengers Per Cabbie,January 2013") # will need to change these limits for full data set
+  ggtitle("Total Passengers Per Cabbie, January 2013") 
+
 ggplot(taxi_indiv_pass) + geom_histogram(aes(num_trips)) + xlim(0,1000) +
   xlab("Total Trips") + ylab("Number of Cabbies") + 
   ggtitle("Total Trips Per Cabbie, January 2013")
@@ -147,18 +150,69 @@ ggplot(taxi_indiv_tips, aes(tip_rate)) + geom_histogram(binwidth = .005) +
 
 Number of days worked in the month:
 
-```{r}
+```{r, warning = FALSE}
 taxi_indiv_days <- taxi_indiv %>% 
   group_by(hack_license) %>% 
   summarize(total_days_worked = n_distinct(pickup_date)) %>% 
   arrange(desc(total_days_worked))
 
-ggplot(taxi_indiv_days, aes(total_days_worked)) + geom_histogram() + 
+ggplot(taxi_indiv_days, aes(total_days_worked)) + geom_histogram(binwidth = 1) + 
   xlab("Total Days Worked") + ylab("Number of Cabbies") +
   ggtitle("Number of Days Worked By NYC Cabbies in January 2013")
 ```
 
 Wow. Looks like many of our cabbies worked every single day of January.  That's dedication!
+
+Let's compute the total number of hours each cabbie spends in service (not necessarily on the meter).
+
+```{r, warning= FALSE}
+trip_times <- taxi_strat %>% 
+  group_by(hack_license, pickup_date) %>% 
+  summarize(secs_on_meter = sum(trip_time_in_secs), total_amount = sum(total_amount))
+
+taxi_empty <- taxi_strat %>% 
+  select(hack_license, pickup_date, pickup_datetime, dropoff_datetime) %>% 
+  arrange(hack_license, pickup_date, pickup_datetime) 
+# not using mutate here because my version of dplyr has a bug with mutate and lubridate
+taxi_empty$empty_time <- as.integer(taxi_empty$pickup_datetime - lag(taxi_empty$dropoff_datetime))
+
+taxi_empty <- taxi_empty %>% 
+  mutate(empty_time = ifelse(is.na(empty_time)|empty_time<0|empty_time>3600,0,empty_time)) %>%  
+  group_by(hack_license, pickup_date) %>% 
+  summarize(total_empty_time = sum(empty_time)) %>% 
+  left_join(trip_times, by = c("hack_license" = "hack_license", 
+                               "pickup_date" = "pickup_date")) %>% 
+  mutate(total_hours = (total_empty_time + secs_on_meter)/3600)
+
+ggplot(data = taxi_empty, aes(x = total_hours)) + geom_histogram(binwidth = 1) + 
+  xlim(0,20) + xlab("Total Hours Worked") + ylab("Number of Cabbies") +
+  ggtitle("Cabbie Hours Worked in January 2013")
+summary(taxi_empty$total_hours)
+```
+
+So, on any given day, we can see the number of hours worked by a cabbie. The mean workday consists of 7.22 hours (this does not include any meter breaks longer than an hour).
+
+Let's look at efficiency from this point of view.
+```{r}
+taxi_empty_month <- taxi_empty %>% 
+  group_by(hack_license) %>% 
+  summarize(total_empty_time = sum(total_empty_time), secs_on_meter = sum(secs_on_meter),
+            revenue = sum(total_amount), total_hours = sum(total_hours))
+ggplot(data = taxi_empty_month, aes(x = total_hours, y = revenue)) + geom_point() +
+  xlab("Total Hours Worked") + ylab("Revenue") + ggtitle("Hours Worked vs. Revenue")
+fit <- lm(revenue ~ total_hours, data = taxi_empty_month)
+summary(fit)
+```
+
+As expected, we find a strong linear correlation between the total hours worked and revenue.
+
+```{r, warning = FALSE, message = FALSE}
+ggplot(taxi_empty_month, aes(x = (total_empty_time/3600)/total_hours, y = revenue)) + 
+  geom_point() + geom_smooth() + xlab("Empty Hours/Total Hours") + ylab("Total Revenue") + 
+  ggtitle("Empty Time Ratio vs. Revenue")
+```
+
+Interestingly, a higher proportion of working time off the meter doesn't necessarily mean less revenue. There seems to be a sweet spot at around 4.25%. This could be because longer trips (i.e. to/from the airport) could mean more empty time but pay more.
 
 Are there certain drivers that have only cash/only card payments? Maybe some drive cars without card capabilities.
 
@@ -170,24 +224,11 @@ taxi_indiv_payment <- taxi_indiv %>%
   mutate(total = CRD + CSH + DIS + NOC + UNK) %>% 
   mutate(CRD = CRD/total, CSH = CSH/total, DIS = DIS/total, NOC = NOC/total, UNK = UNK/total) %>% 
   arrange(desc(CSH)) %>% 
-  filter(total>=10)
+  dplyr::filter(total>=10)
 
-ggplot(data = taxi_indiv_payment, aes (x = CSH)) + geom_histogram(binwidth = .05)
-
-# to find the outlier
-taxi_indiv_payment %>% 
-  filter(CSH >.9)
-
-# examining the outlier further
-outlier_trips <- taxi_strat %>% 
-  filter(hack_license == "9528862888CE780606F9076DD218F7E1")
-
-ggplot(data = outlier_trips, aes(x = total_amount)) + geom_histogram()
-
-ggplot(data = outlier_trips, aes(x = pickup_longitude, y = pickup_latitude)) + 
-  geom_point(color = "blue", alpha = 1/5) + xlim(-74,-73.96) + ylim(40.75,40.8) +
-  geom_point(data = outlier_trips, aes(x = dropoff_longitude, y = dropoff_latitude),
-             color = "red", alpha = 1/10)
+ggplot(data = taxi_indiv_payment, aes (x = CSH)) + geom_histogram(binwidth = .05) +
+  xlab("Percent Cash") + ylab("Number of Cabbies") + 
+  ggtitle("Percentage of Cash Payments for NYC Cabbies")
 ```
 
 Most cabbies are paid in cash for a little less than 50% of their trips. There's one outlier in particular who drove 221 trips in January and only received a card payment in 2 of those trips. After some investigation, it doesn't look like this outlier has behavior much different from other cabs (total amounts of fares, pickup/dropoff locations).  Perhaps he happens to driver cars with broken card machines.  I'm open to ideas on this!
@@ -199,8 +240,9 @@ taxi_indiv_nmf <- taxi_indiv %>%
   summarize(count = n()) %>% 
   mutate(count = ifelse(count>5,1,0)) %>% 
   dplyr::filter(!is.na(count), !is.na(hack_license), !is.na(pickup_hour)) %>% 
-  spread(pickup_hour, count, fill = 0) %>%
-  mutate(total = rowSums(taxi_indiv_nmf[,2:25])) %>% 
+  spread(pickup_hour, count, fill = 0) 
+taxi_indiv_nmf$total <- rowSums(taxi_indiv_nmf[,2:25])
+taxi_indiv_nmf <- taxi_indiv_nmf %>% 
   dplyr::filter(total>0) %>% 
   dplyr::select(-hack_license,-total) 
  
@@ -216,3 +258,4 @@ In this basis map, the rows are the cabbies and the columns are our two shift gr
 ```{r, echo = FALSE}
 basismap(nmf_taxi)
 ```
+
