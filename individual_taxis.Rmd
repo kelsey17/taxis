@@ -186,7 +186,7 @@ taxi_empty <- taxi_empty %>%
 
 ggplot(data = taxi_empty, aes(x = total_hours)) + geom_histogram(binwidth = 1) + 
   xlim(0,20) + xlab("Total Hours Worked") + ylab("Number of Cabbies") +
-  ggtitle("Cabbie Hours Worked in January 2013")
+  ggtitle("Cabbie Daily Hours Worked")
 summary(taxi_empty$total_hours)
 ```
 
@@ -212,7 +212,7 @@ ggplot(taxi_empty_month, aes(x = (total_empty_time/3600)/total_hours, y = revenu
   ggtitle("Empty Time Ratio vs. Revenue")
 ```
 
-Interestingly, a higher proportion of working time off the meter doesn't necessarily mean less revenue. There seems to be a sweet spot at around 4.25%. This could be because longer trips (i.e. to/from the airport) could mean more empty time but pay more.
+Interestingly, a higher proportion of working time off the meter doesn't necessarily mean less revenue. There seems to be a sweet spot at around 40.25%. This could be because longer trips (i.e. to/from the airport) could mean more empty time but pay more.
 
 Are there certain drivers that have only cash/only card payments? Maybe some drive cars without card capabilities.
 

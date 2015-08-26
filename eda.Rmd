@@ -344,5 +344,5 @@ prp(fit)
 
 This decision tree illustrates some factors that can affect trip length. Here's a nicer version:
 
-![](/Users/angelaschroeder/Desktop/Screen Shot 2015-08-26 at 11.23.46 AM.png) 
+![](/Screen Shot 2015-08-26 at 11.23.46 AM.png) 
 
